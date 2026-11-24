@@ -12,6 +12,7 @@ const PUBLIC_URL = or(
   process.env.PUBLIC_URL,
   `http://localhost:${PORT}`,
 ).replace(/\/$/, "");
+const COUNTRY_CODE = or(process.env.TIDAL_COUNTRY_CODE, "SG");
 const ALLOW_DASH_HIRES = process.env.ALLOW_DASH_HIRES !== "false";
 
 const AUTH_MODE = or(process.env.AUTH_MODE, "off").toLowerCase();
@@ -59,57 +60,39 @@ async function verifyBitChordAuth(req, res, next) {
   }
 }
 
-const DEFAULT_BRIDGES = [
-  "https://triton.squid.wtf",
-  "https://wolf.qqdl.site",
-  "https://maus.qqdl.site",
-  "https://vogel.qqdl.site",
-  "https://hund.qqdl.site",
-  "https://katze.qqdl.site",
-  "https://tidal-api.binimum.org",
-];
-
-const BRIDGE_URLS = process.env.HIFI_API_URLS
-  ? process.env.HIFI_API_URLS.split(",")
-      .map((s) => s.trim().replace(/\/$/, ""))
-      .filter(Boolean)
-  : DEFAULT_BRIDGES;
-
 const USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36";
 
-async function bridgeFetch(pathAndQuery) {
-  let lastError = "Tidak ada bridge yang merespons";
-  for (const base of BRIDGE_URLS) {
-    try {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 8000);
-      const resp = await fetch(`${base}${pathAndQuery}`, {
-        headers: {
-          Accept: "application/json",
-          "User-Agent": USER_AGENT,
-        },
-        signal: controller.signal,
-      });
-      clearTimeout(timer);
-
-      if (!resp.ok) {
-        lastError = `${base} status ${resp.status}`;
-        continue;
-      }
-      const json = await resp.json();
-      return json;
-    } catch (err) {
-      lastError = `${base} error: ${err.message}`;
-    }
+async function tidalFetch(path, params = {}) {
+  const token = or(process.env.TIDAL_ACCESS_TOKEN, "").trim();
+  if (!token) {
+    throw new Error("TIDAL_ACCESS_TOKEN belum diisi di Environment Variables");
   }
-  throw new Error(`Semua Tidal bridge gagal. Terakhir: ${lastError}`);
+
+  const url = new URL(`https://api.tidal.com/v1${path}`);
+  url.searchParams.set("countryCode", COUNTRY_CODE);
+  for (const [k, v] of Object.entries(params)) {
+    if (v !== undefined && v !== null) url.searchParams.set(k, String(v));
+  }
+
+  const resp = await fetch(url, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: "application/json",
+      "User-Agent": USER_AGENT,
+    },
+  });
+
+  if (!resp.ok) {
+    const errText = await resp.text();
+    throw new Error(`Tidal API error ${resp.status}: ${errText}`);
+  }
+  return resp.json();
 }
 
 function buildCoverUrl(coverUuid, size = "640x640") {
   if (!coverUuid) return null;
-  if (String(coverUuid).startsWith("http")) return coverUuid;
-  return `https://resources.tidal.com/images/${String(coverUuid).replace(/-/g, "/")}/${size}.jpg`;
+  return `https://resources.tidal.com/images/${coverUuid.replace(/-/g, "/")}/${size}.jpg`;
 }
 
 function mapTidalTrack(item) {
@@ -126,14 +109,6 @@ function mapTidalTrack(item) {
     isrc: or(item.isrc, undefined),
     artwork: buildCoverUrl(item.album?.cover),
   };
-}
-
-function extractItems(raw) {
-  if (Array.isArray(raw?.data?.items)) return raw.data.items;
-  if (Array.isArray(raw?.items)) return raw.items;
-  if (Array.isArray(raw?.tracks?.items)) return raw.tracks.items;
-  if (Array.isArray(raw?.data?.tracks?.items)) return raw.data.tracks.items;
-  return [];
 }
 
 function mapBitChordQualityToTidal(qualityParam) {
@@ -178,9 +153,8 @@ app.get("/search", verifyBitChordAuth, async (req, res) => {
     const limit = Math.min(Number(or(req.query.limit, 15)), 50);
     if (!query) return res.json({ tracks: [] });
 
-    const data = await bridgeFetch(`/search/?s=${encodeURIComponent(query)}`);
-    const items = extractItems(data).slice(0, limit);
-    res.json({ tracks: items.map(mapTidalTrack) });
+    const data = await tidalFetch("/search/tracks", { query, limit });
+    res.json({ tracks: or(data.items, []).map(mapTidalTrack) });
   } catch (err) {
     console.error("[/search]", err.message);
     res.status(500).json({ tracks: [], error: err.message });
@@ -192,9 +166,8 @@ app.get("/isrc/:code", verifyBitChordAuth, async (req, res) => {
     const isrc = String(or(req.params.code, "")).trim().toUpperCase();
     if (!isrc) return res.json({ tracks: [] });
 
-    const data = await bridgeFetch(`/search/?s=${encodeURIComponent(isrc)}`);
-    const items = extractItems(data);
-    const exactMatches = items
+    const data = await tidalFetch("/search/tracks", { query: isrc, limit: 10 });
+    const exactMatches = or(data.items, [])
       .filter((t) => or(t.isrc, "").toUpperCase() === isrc)
       .map(mapTidalTrack);
 
@@ -208,45 +181,29 @@ app.get("/isrc/:code", verifyBitChordAuth, async (req, res) => {
 app.get("/stream/:id", verifyBitChordAuth, async (req, res) => {
   try {
     const trackId = req.params.id;
-    const audioQuality = mapBitChordQualityToTidal(req.query.quality);
+    let audioQuality = mapBitChordQualityToTidal(req.query.quality);
 
-    const raw = await bridgeFetch(
-      `/track/?id=${encodeURIComponent(trackId)}&quality=${encodeURIComponent(audioQuality)}`,
+    let playback = await tidalFetch(
+      `/tracks/${trackId}/playbackinfopostpaywall`,
+      {
+        playbackmode: "STREAM",
+        assetpresentation: "FULL",
+        audioquality: audioQuality,
+      },
     );
 
-    if (Array.isArray(raw)) {
-      const urlEntry = raw.find((x) => x && x.OriginalTrackUrl);
-      if (urlEntry?.OriginalTrackUrl) {
-        return res.json({
-          url: urlEntry.OriginalTrackUrl,
-          codec: "flac",
-          format: "flac",
-          mimeType: "audio/flac",
-          sampleRate: 44100,
-          bitDepth: 16,
-          bitrate: 1411,
-          encrypted: false,
-        });
-      }
-    }
-
-    const playback = raw?.data ? raw.data : raw;
-
-    if (playback?.OriginalTrackUrl) {
-      return res.json({
-        url: playback.OriginalTrackUrl,
-        codec: "flac",
-        format: "flac",
-        mimeType: "audio/flac",
-        sampleRate: or(playback.sampleRate, 44100),
-        bitDepth: or(playback.bitDepth, 16),
-        bitrate: 1411,
-        encrypted: false,
-      });
-    }
-
-    if (!playback?.manifest) {
-      return res.status(404).json({ error: "Manifest stream tidak ditemukan" });
+    if (
+      playback.manifestMimeType === "application/dash+xml" &&
+      !ALLOW_DASH_HIRES
+    ) {
+      playback = await tidalFetch(
+        `/tracks/${trackId}/playbackinfopostpaywall`,
+        {
+          playbackmode: "STREAM",
+          assetpresentation: "FULL",
+          audioquality: "LOSSLESS",
+        },
+      );
     }
 
     const decodedManifest = Buffer.from(playback.manifest, "base64").toString(
@@ -264,9 +221,8 @@ app.get("/stream/:id", verifyBitChordAuth, async (req, res) => {
     if (playback.manifestMimeType === "application/vnd.tidal.bts") {
       const bts = JSON.parse(decodedManifest);
       const streamUrl = bts.urls?.[0];
-      if (!streamUrl) {
+      if (!streamUrl)
         return res.status(404).json({ error: "Stream URL kosong" });
-      }
 
       const isFlac = or(bts.codecs, "").toLowerCase().includes("flac")
         ? true
@@ -299,9 +255,9 @@ app.get("/stream/:id", verifyBitChordAuth, async (req, res) => {
       });
     }
 
-    return res.status(415).json({
-      error: `Manifest tidak didukung: ${playback.manifestMimeType}`,
-    });
+    return res
+      .status(415)
+      .json({ error: `Manifest tidak didukung: ${playback.manifestMimeType}` });
   } catch (err) {
     console.error("[/stream]", err.message);
     res.status(500).json({ error: err.message });
@@ -311,9 +267,8 @@ app.get("/stream/:id", verifyBitChordAuth, async (req, res) => {
 app.get("/dash/:token.mpd", (req, res) => {
   const entry = dashCache.get(req.params.token);
   if (!entry) return res.status(404).send("Manifest expired");
-  if (entry.expiresAt < Date.now()) {
+  if (entry.expiresAt < Date.now())
     return res.status(404).send("Manifest expired");
-  }
   res.setHeader("Content-Type", "application/dash+xml");
   res.send(entry.xml);
 });
