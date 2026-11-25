@@ -209,6 +209,15 @@ function storeDashManifest(mpdXml) {
   return token;
 }
 
+app.get("/ping", (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  res.json({
+    status: "online",
+    uptime: Math.floor(process.uptime()),
+    timestamp: Date.now(),
+  });
+});
+
 app.get("/", (req, res) => {
   const manifestUrl = `${PUBLIC_URL}/manifest.json`;
   res.setHeader("Content-Type", "text/html; charset=utf-8");
@@ -220,7 +229,7 @@ app.get("/", (req, res) => {
   <title>Layz Hi-Res — BitChord Addon</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
@@ -230,8 +239,9 @@ app.get("/", (req, res) => {
       --text: #f3f6fc;
       --muted: #94a3b8;
       --accent: #38bdf8;
-      --accent2: #818cf8;
       --green: #22c55e;
+      --yellow: #eab308;
+      --red: #ef4444;
     }
     body {
       font-family: "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
@@ -281,7 +291,9 @@ app.get("/", (req, res) => {
       display: flex;
       align-items: center;
       justify-content: space-between;
+      gap: 10px;
       margin-bottom: 24px;
+      flex-wrap: wrap;
     }
     .status {
       display: inline-flex;
@@ -294,6 +306,12 @@ app.get("/", (req, res) => {
       border: 1px solid rgba(34, 197, 94, 0.25);
       padding: 6px 12px;
       border-radius: 999px;
+      transition: all 0.2s ease;
+    }
+    .status.offline {
+      color: #fca5a5;
+      background: rgba(239, 68, 68, 0.12);
+      border-color: rgba(239, 68, 68, 0.3);
     }
     .dot {
       width: 8px;
@@ -303,11 +321,21 @@ app.get("/", (req, res) => {
       box-shadow: 0 0 10px var(--green);
       animation: pulse 2s infinite;
     }
+    .status.offline .dot {
+      background: var(--red);
+      box-shadow: 0 0 10px var(--red);
+      animation: none;
+    }
     @keyframes pulse {
       0%, 100% { opacity: 1; transform: scale(1); }
       50% { opacity: 0.45; transform: scale(0.85); }
     }
-    .version {
+    .top-right {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .pill-mono {
       font-family: "JetBrains Mono", monospace;
       font-size: 12px;
       color: var(--muted);
@@ -345,8 +373,37 @@ app.get("/", (req, res) => {
       font-size: 14px;
       color: var(--muted);
       line-height: 1.6;
-      margin-bottom: 26px;
+      margin-bottom: 22px;
     }
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+      margin-bottom: 24px;
+    }
+    .metric {
+      background: rgba(7, 9, 15, 0.65);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 12px 14px;
+    }
+    .metric-label {
+      font-size: 10.5px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+    .metric-value {
+      font-family: "JetBrains Mono", monospace;
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--text);
+    }
+    .metric-value.fast { color: #4ade80; }
+    .metric-value.medium { color: #facc15; }
+    .metric-value.slow { color: #f87171; }
     .section-label {
       font-size: 11px;
       font-weight: 600;
@@ -428,6 +485,7 @@ app.get("/", (req, res) => {
     .footer a:hover { text-decoration: underline; }
     @media (max-width: 480px) {
       .card { padding: 26px 20px; }
+      .metrics { grid-template-columns: 1fr; }
       .badges { grid-template-columns: 1fr; }
     }
   </style>
@@ -435,8 +493,13 @@ app.get("/", (req, res) => {
 <body>
   <main class="card">
     <div class="top-bar">
-      <div class="status"><span class="dot"></span> Server Online</div>
-      <span class="version">v1.0.2</span>
+      <div class="status" id="statusPill">
+        <span class="dot"></span>
+        <span id="statusText">Checking...</span>
+      </div>
+      <div class="top-right">
+        <span class="pill-mono">v1.0.2</span>
+      </div>
     </div>
 
     <div class="brand">
@@ -455,6 +518,21 @@ app.get("/", (req, res) => {
     <p class="subtitle">
       Custom audio streaming addon untuk <strong>BitChord</strong>. Mendukung streaming Hi-Res 24-bit FLAC, Lossless 16-bit, hingga Dolby Atmos secara otomatis.
     </p>
+
+    <div class="metrics">
+      <div class="metric">
+        <div class="metric-label">Status</div>
+        <div class="metric-value fast" id="metricStatus">Online</div>
+      </div>
+      <div class="metric">
+        <div class="metric-label">Latency</div>
+        <div class="metric-value" id="metricPing">-- ms</div>
+      </div>
+      <div class="metric">
+        <div class="metric-label">Uptime</div>
+        <div class="metric-value" id="metricUptime">--</div>
+      </div>
+    </div>
 
     <div class="section-label">Manifest URL</div>
     <div class="url-box">
@@ -489,6 +567,54 @@ app.get("/", (req, res) => {
   </main>
 
   <script>
+    function formatUptime(sec) {
+      var d = Math.floor(sec / 86400);
+      var h = Math.floor((sec % 86400) / 3600);
+      var m = Math.floor((sec % 3600) / 60);
+      var s = sec % 60;
+      if (d > 0) return d + "d " + h + "h";
+      if (h > 0) return h + "h " + m + "m";
+      if (m > 0) return m + "m " + s + "s";
+      return s + "s";
+    }
+
+    async function checkPing() {
+      var pill = document.getElementById("statusPill");
+      var statusText = document.getElementById("statusText");
+      var metricStatus = document.getElementById("metricStatus");
+      var metricPing = document.getElementById("metricPing");
+      var metricUptime = document.getElementById("metricUptime");
+
+      var start = performance.now();
+      try {
+        var resp = await fetch("/ping", { cache: "no-store" });
+        var latency = Math.round(performance.now() - start);
+        if (!resp.ok) throw new Error("HTTP " + resp.status);
+        var data = await resp.json();
+
+        pill.classList.remove("offline");
+        statusText.textContent = "Server Online · " + latency + " ms";
+        metricStatus.textContent = "Online";
+        metricStatus.className = "metric-value fast";
+
+        metricPing.textContent = latency + " ms";
+        metricPing.className =
+          "metric-value " + (latency < 150 ? "fast" : latency < 350 ? "medium" : "slow");
+
+        metricUptime.textContent = formatUptime(data.uptime || 0);
+      } catch (err) {
+        pill.classList.add("offline");
+        statusText.textContent = "Server Offline";
+        metricStatus.textContent = "Offline";
+        metricStatus.className = "metric-value slow";
+        metricPing.textContent = "Timeout";
+        metricPing.className = "metric-value slow";
+      }
+    }
+
+    checkPing();
+    setInterval(checkPing, 5000);
+
     function copyManifest() {
       var text = document.getElementById("manifestUrl").innerText;
       var btn = document.getElementById("copyBtn");
