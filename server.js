@@ -210,7 +210,300 @@ function storeDashManifest(mpdXml) {
 }
 
 app.get("/", (req, res) => {
-  res.send("Layz addon is running!");
+  const manifestUrl = `${PUBLIC_URL}/manifest.json`;
+  res.setHeader("Content-Type", "text/html; charset=utf-8");
+  res.send(`<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Layz Hi-Res — BitChord Addon</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #07090f;
+      --card: rgba(17, 22, 34, 0.72);
+      --border: rgba(255, 255, 255, 0.08);
+      --text: #f3f6fc;
+      --muted: #94a3b8;
+      --accent: #38bdf8;
+      --accent2: #818cf8;
+      --green: #22c55e;
+    }
+    body {
+      font-family: "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
+      background-color: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      position: relative;
+      overflow-x: hidden;
+    }
+    body::before, body::after {
+      content: "";
+      position: fixed;
+      width: 480px;
+      height: 480px;
+      border-radius: 50%;
+      filter: blur(120px);
+      opacity: 0.22;
+      z-index: -1;
+      pointer-events: none;
+    }
+    body::before {
+      top: -120px;
+      left: -100px;
+      background: radial-gradient(circle, #38bdf8, transparent 70%);
+    }
+    body::after {
+      bottom: -140px;
+      right: -100px;
+      background: radial-gradient(circle, #818cf8, transparent 70%);
+    }
+    .card {
+      width: 100%;
+      max-width: 540px;
+      background: var(--card);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border: 1px solid var(--border);
+      border-radius: 24px;
+      padding: 36px 32px;
+      box-shadow: 0 24px 64px rgba(0, 0, 0, 0.55);
+    }
+    .top-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 24px;
+    }
+    .status {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      font-weight: 600;
+      color: #86efac;
+      background: rgba(34, 197, 94, 0.12);
+      border: 1px solid rgba(34, 197, 94, 0.25);
+      padding: 6px 12px;
+      border-radius: 999px;
+    }
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--green);
+      box-shadow: 0 0 10px var(--green);
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.45; transform: scale(0.85); }
+    }
+    .version {
+      font-family: "JetBrains Mono", monospace;
+      font-size: 12px;
+      color: var(--muted);
+      background: rgba(255, 255, 255, 0.05);
+      padding: 5px 10px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      margin-bottom: 14px;
+    }
+    .logo {
+      width: 52px;
+      height: 52px;
+      border-radius: 16px;
+      background: linear-gradient(135deg, #38bdf8, #818cf8);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 10px 28px rgba(56, 189, 248, 0.28);
+      flex-shrink: 0;
+    }
+    h1 {
+      font-size: 28px;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      background: linear-gradient(90deg, #ffffff, #bae6fd);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .subtitle {
+      font-size: 14px;
+      color: var(--muted);
+      line-height: 1.6;
+      margin-bottom: 26px;
+    }
+    .section-label {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+      margin-bottom: 10px;
+    }
+    .url-box {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(7, 9, 15, 0.75);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 8px 8px 8px 14px;
+      margin-bottom: 24px;
+    }
+    .url-text {
+      font-family: "JetBrains Mono", monospace;
+      font-size: 12.5px;
+      color: #e2e8f0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      flex: 1;
+    }
+    .btn-copy {
+      background: linear-gradient(135deg, #38bdf8, #6366f1);
+      color: #fff;
+      border: none;
+      border-radius: 10px;
+      padding: 9px 16px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: transform 0.15s ease, opacity 0.15s ease;
+      flex-shrink: 0;
+    }
+    .btn-copy:hover { opacity: 0.92; transform: translateY(-1px); }
+    .btn-copy:active { transform: translateY(0); }
+    .btn-copy.copied { background: linear-gradient(135deg, #22c55e, #16a34a); }
+    .badges {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 10px;
+      margin-bottom: 26px;
+    }
+    .badge {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 12px 14px;
+    }
+    .badge-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text);
+      margin-bottom: 2px;
+    }
+    .badge-sub {
+      font-size: 11.5px;
+      color: var(--muted);
+    }
+    .footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding-top: 18px;
+      border-top: 1px solid var(--border);
+      font-size: 12.5px;
+      color: var(--muted);
+    }
+    .footer a {
+      color: var(--accent);
+      text-decoration: none;
+      font-weight: 500;
+    }
+    .footer a:hover { text-decoration: underline; }
+    @media (max-width: 480px) {
+      .card { padding: 26px 20px; }
+      .badges { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <main class="card">
+    <div class="top-bar">
+      <div class="status"><span class="dot"></span> Server Online</div>
+      <span class="version">v1.0.2</span>
+    </div>
+
+    <div class="brand">
+      <div class="logo">
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M9 18V5l12-2v13"></path>
+          <circle cx="6" cy="18" r="3"></circle>
+          <circle cx="18" cy="16" r="3"></circle>
+        </svg>
+      </div>
+      <div>
+        <h1>Layz Hi-Res</h1>
+      </div>
+    </div>
+
+    <p class="subtitle">
+      Custom audio streaming addon untuk <strong>BitChord</strong>. Mendukung streaming Hi-Res 24-bit FLAC, Lossless 16-bit, hingga Dolby Atmos secara otomatis.
+    </p>
+
+    <div class="section-label">Manifest URL</div>
+    <div class="url-box">
+      <span class="url-text" id="manifestUrl">${manifestUrl}</span>
+      <button class="btn-copy" id="copyBtn" onclick="copyManifest()">Copy URL</button>
+    </div>
+
+    <div class="section-label">Supported Audio Tiers</div>
+    <div class="badges">
+      <div class="badge">
+        <div class="badge-title">Hi-Res Lossless</div>
+        <div class="badge-sub">FLAC · 24-bit / up to 192 kHz</div>
+      </div>
+      <div class="badge">
+        <div class="badge-title">Lossless</div>
+        <div class="badge-sub">FLAC · 16-bit / 44.1 kHz</div>
+      </div>
+      <div class="badge">
+        <div class="badge-title">Dolby Atmos</div>
+        <div class="badge-sub">E-AC-3 JOC · Spatial Audio</div>
+      </div>
+      <div class="badge">
+        <div class="badge-title">High &amp; Low</div>
+        <div class="badge-sub">AAC · 320 kbps &amp; 128 kbps</div>
+      </div>
+    </div>
+
+    <div class="footer">
+      <span>Paste URL di menu Sources BitChord</span>
+      <a href="/manifest.json" target="_blank">Lihat manifest.json &rarr;</a>
+    </div>
+  </main>
+
+  <script>
+    function copyManifest() {
+      var text = document.getElementById("manifestUrl").innerText;
+      var btn = document.getElementById("copyBtn");
+      navigator.clipboard.writeText(text).then(function() {
+        btn.innerText = "Copied!";
+        btn.classList.add("copied");
+        setTimeout(function() {
+          btn.innerText = "Copy URL";
+          btn.classList.remove("copied");
+        }, 2000);
+      });
+    }
+  </script>
+</body>
+</html>`);
 });
 
 app.get("/manifest.json", (req, res) => {
