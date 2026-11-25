@@ -220,8 +220,35 @@ app.get("/manifest.json", (req, res) => {
     version: "1.0.2",
     description: "Hi-Res & Lossless addon for BitChord",
     resources: ["search", "stream", "isrc"],
-    qualities: ["hires", "lossless", "atmos", "high", "low"],
     bitchordAuth: AUTH_MODE === "enforce",
+    settings: [
+      {
+        key: "quality",
+        type: "select",
+        options: [
+          {
+            label: "Hi-Res Lossless (24-bit)",
+            value: "hires",
+          },
+          {
+            label: "Lossless (16-bit)",
+            value: "lossless",
+          },
+          {
+            label: "Dolby Atmos",
+            value: "atmos",
+          },
+          {
+            label: "High · 320 kbps",
+            value: "high",
+          },
+          {
+            label: "Low · 128 kbps",
+            value: "low",
+          },
+        ],
+      },
+    ],
   });
 });
 
