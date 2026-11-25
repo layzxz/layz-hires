@@ -20,12 +20,13 @@ Custom audio streaming addon untuk **BitChord** yang mendukung pemutaran **Hi-Re
 
 ## 🚀 Cara Pasang di BitChord
 
-1. Buka aplikasi **BitChord** → masuk ke menu **Sources / Addons**.
-2. Tambahkan URL manifest berikut:
+1. Deploy server ini terlebih dahulu (misalnya di Render) menggunakan langkah **Self-Hosting** di bawah.
+2. Buka aplikasi **BitChord** → masuk ke menu **Sources / Addons**.
+3. Tambahkan URL manifest dari server kamu:
    ```text
-   [https://layyyz.web.id/manifest.json](https://layyyz.web.id/manifest.json)
+   [https://your-domain.com/manifest.json](https://your-domain.com/manifest.json)
    ```
-3. Aktifkan **Layz Hi-Res** dan pilih kualitas audio yang diinginkan lewat menu dropdown kualitas.
+4. Aktifkan **Layz Hi-Res** dan pilih kualitas audio yang diinginkan lewat menu dropdown kualitas.
 
 ---
 
