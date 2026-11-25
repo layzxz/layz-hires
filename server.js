@@ -217,9 +217,10 @@ app.get("/manifest.json", (req, res) => {
   res.json({
     id: "id.web.layyyz.lzaddon",
     name: "Layz Hi-Res",
-    version: "1.0.1",
+    version: "1.0.2",
     description: "Hi-Res & Lossless addon for BitChord",
     resources: ["search", "stream", "isrc"],
+    qualities: ["hires", "lossless", "atmos", "high", "low"],
     bitchordAuth: AUTH_MODE === "enforce",
   });
 });
