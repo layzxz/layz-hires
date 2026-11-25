@@ -63,11 +63,85 @@ async function verifyBitChordAuth(req, res, next) {
 const USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36";
 
-async function tidalFetch(path, params = {}) {
-  const token = or(process.env.TIDAL_ACCESS_TOKEN, "").trim();
-  if (!token) {
-    throw new Error("TIDAL_ACCESS_TOKEN belum diisi di Environment Variables");
+// --- Auto-Refresh Token Tidal ---
+let tidalAccessToken = or(process.env.TIDAL_ACCESS_TOKEN, "").trim();
+let tokenExpiresAt = tidalAccessToken ? Date.now() + 300000 : 0;
+let refreshPromise = null;
+
+async function getTidalAccessToken(forceRefresh = false) {
+  if (
+    !forceRefresh &&
+    tidalAccessToken &&
+    Date.now() < tokenExpiresAt - 60000
+  ) {
+    return tidalAccessToken;
   }
+
+  const refreshToken = or(process.env.TIDAL_REFRESH_TOKEN, "").trim();
+  if (!refreshToken) {
+    if (!tidalAccessToken) {
+      throw new Error(
+        "TIDAL_ACCESS_TOKEN atau TIDAL_REFRESH_TOKEN belum diisi di Environment Variables",
+      );
+    }
+    return tidalAccessToken;
+  }
+
+  if (refreshPromise) return refreshPromise;
+
+  refreshPromise = (async () => {
+    const clientId = or(process.env.TIDAL_CLIENT_ID, "6BDSRdpK9hqEBTgU").trim();
+    const clientSecret = or(process.env.TIDAL_CLIENT_SECRET, "").trim();
+
+    const body = new URLSearchParams({
+      grant_type: "refresh_token",
+      refresh_token: refreshToken,
+      scope: "r_usr w_usr w_sub",
+    });
+
+    const headers = {
+      "Content-Type": "application/x-www-form-urlencoded",
+      "User-Agent": USER_AGENT,
+    };
+
+    if (clientSecret) {
+      const basicAuth = Buffer.from(`${clientId}:${clientSecret}`).toString(
+        "base64",
+      );
+      headers.Authorization = `Basic ${basicAuth}`;
+    } else {
+      body.set("client_id", clientId);
+    }
+
+    const resp = await fetch("https://auth.tidal.com/v1/oauth2/token", {
+      method: "POST",
+      headers,
+      body,
+    });
+
+    if (!resp.ok) {
+      const text = await resp.text();
+      throw new Error(`Gagal refresh token Tidal (${resp.status}): ${text}`);
+    }
+
+    const data = await resp.json();
+    tidalAccessToken = data.access_token;
+    tokenExpiresAt = Date.now() + or(data.expires_in, 3600) * 1000;
+    console.log(
+      `[tidal-auth] Token berhasil diperbarui (berlaku ${or(data.expires_in, 3600)} detik)`,
+    );
+    return tidalAccessToken;
+  })();
+
+  try {
+    return await refreshPromise;
+  } finally {
+    refreshPromise = null;
+  }
+}
+
+async function tidalFetch(path, params = {}, retried = false) {
+  const token = await getTidalAccessToken(retried);
 
   const url = new URL(`https://api.tidal.com/v1${path}`);
   url.searchParams.set("countryCode", COUNTRY_CODE);
@@ -82,6 +156,11 @@ async function tidalFetch(path, params = {}) {
       "User-Agent": USER_AGENT,
     },
   });
+
+  if (resp.status === 401 && !retried && process.env.TIDAL_REFRESH_TOKEN) {
+    console.warn("[tidal-auth] Token 401, mencoba auto-refresh...");
+    return tidalFetch(path, params, true);
+  }
 
   if (!resp.ok) {
     const errText = await resp.text();
