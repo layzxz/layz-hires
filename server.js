@@ -191,6 +191,11 @@ function mapTidalTrack(item) {
 }
 
 function mapBitChordQualityToTidal(qualityParam) {
+  const q = String(or(qualityParam, "hires")).toLowerCase().trim();
+  if (q.includes("atmos") || q.includes("dolby")) return "DOLBY_ATMOS";
+  if (q === "low" || q === "128" || q === "96") return "LOW";
+  if (q === "high" || q === "320") return "HIGH";
+  if (q === "lossless" || q === "16bit") return "LOSSLESS";
   return ALLOW_DASH_HIRES ? "HI_RES_LOSSLESS" : "LOSSLESS";
 }
 
@@ -252,8 +257,33 @@ app.get("/isrc/:code", verifyBitChordAuth, async (req, res) => {
 
 app.get("/stream/:id", verifyBitChordAuth, async (req, res) => {
   try {
-    const trackId = req.params.id;
-    let audioQuality = mapBitChordQualityToTidal(req.query.quality);
+    let trackId = req.params.id;
+    const requestedQuality = mapBitChordQualityToTidal(req.query.quality);
+    let audioQuality = requestedQuality;
+
+    // Jika pilih Dolby Atmos, cek apakah track ini Atmos; jika bukan, cari versi Atmos-nya
+    if (requestedQuality === "DOLBY_ATMOS") {
+      try {
+        const trackInfo = await tidalFetch(`/tracks/${trackId}`);
+        const isAlreadyAtmos = trackInfo.audioModes?.includes("DOLBY_ATMOS");
+        if (!isAlreadyAtmos && trackInfo.title) {
+          const artistName = or(trackInfo.artist?.name, "");
+          const searchRes = await tidalFetch("/search/tracks", {
+            query: `${trackInfo.title} ${artistName}`.trim(),
+            limit: 15,
+          });
+          const atmosMatch = or(searchRes.items, []).find(
+            (t) =>
+              t.audioModes?.includes("DOLBY_ATMOS") &&
+              t.title?.toLowerCase() === trackInfo.title?.toLowerCase(),
+          );
+          if (atmosMatch) trackId = String(atmosMatch.id);
+        }
+      } catch (e) {
+        console.warn("[atmos-lookup]", e.message);
+      }
+      audioQuality = "LOSSLESS";
+    }
 
     let playback = await tidalFetch(
       `/tracks/${trackId}/playbackinfopostpaywall`,
@@ -296,33 +326,62 @@ app.get("/stream/:id", verifyBitChordAuth, async (req, res) => {
       if (!streamUrl)
         return res.status(404).json({ error: "Stream URL kosong" });
 
-      const isFlac = or(bts.codecs, "").toLowerCase().includes("flac")
-        ? true
-        : or(bts.mimeType, "").includes("flac");
+      const codecs = or(bts.codecs, "").toLowerCase();
+      const mime = or(bts.mimeType, "").toLowerCase();
+      const isAtmos =
+        playback.audioMode === "DOLBY_ATMOS" ||
+        codecs.includes("ec-3") ||
+        codecs.includes("eac3") ||
+        codecs.includes("ac-4");
+      const isFlac = codecs.includes("flac") || mime.includes("flac");
+      const isLow = playback.audioQuality === "LOW";
+
+      let codec = "aac";
+      let format = "m4a";
+      let bitrate = isLow ? 128 : 320;
+
+      if (isAtmos) {
+        codec = codecs.includes("ac-4") ? "ac4" : "eac3";
+        format = "mp4";
+        bitrate = 768;
+      } else if (isFlac) {
+        codec = "flac";
+        format = "flac";
+        bitrate = Math.round((sampleRate * bitDepth * 2) / 1000);
+      }
 
       return res.json({
         url: streamUrl,
-        codec: isFlac ? "flac" : "aac",
-        format: isFlac ? "flac" : "m4a",
+        codec,
+        format,
         mimeType: or(bts.mimeType, isFlac ? "audio/flac" : "audio/mp4"),
         sampleRate,
         bitDepth: isFlac ? bitDepth : 16,
-        bitrate: isFlac ? Math.round((sampleRate * bitDepth * 2) / 1000) : 320,
+        bitrate,
+        dolbyAtmos: isAtmos,
         encrypted: bts.encryptionType && bts.encryptionType !== "NONE",
       });
     }
 
     if (playback.manifestMimeType === "application/dash+xml") {
       const dashToken = storeDashManifest(decodedManifest);
+      const isAtmosDash =
+        playback.audioMode === "DOLBY_ATMOS" ||
+        decodedManifest.includes("ec-3") ||
+        decodedManifest.includes("ac-4");
+
       return res.json({
         url: `${PUBLIC_URL}/dash/${dashToken}.mpd`,
-        codec: "flac",
-        format: "flac",
+        codec: isAtmosDash ? "eac3" : "flac",
+        format: isAtmosDash ? "mp4" : "flac",
         mimeType: "application/dash+xml",
         manifest: "dash",
         sampleRate,
-        bitDepth,
-        bitrate: Math.round((sampleRate * bitDepth * 2) / 1000),
+        bitDepth: isAtmosDash ? 16 : bitDepth,
+        bitrate: isAtmosDash
+          ? 768
+          : Math.round((sampleRate * bitDepth * 2) / 1000),
+        dolbyAtmos: isAtmosDash,
         encrypted: false,
       });
     }
