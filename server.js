@@ -112,13 +112,6 @@ function mapTidalTrack(item) {
 }
 
 function mapBitChordQualityToTidal(qualityParam) {
-  const q = String(or(qualityParam, "lossless")).toLowerCase();
-  if (["hi_res", "hires", "max"].includes(q)) {
-    return ALLOW_DASH_HIRES ? "HI_RES_LOSSLESS" : "LOSSLESS";
-  }
-  if (["lossless", "flac"].includes(q)) return "LOSSLESS";
-  if (q === "high") return "HIGH";
-  if (["medium", "low"].includes(q)) return "LOW";
   return ALLOW_DASH_HIRES ? "HI_RES_LOSSLESS" : "LOSSLESS";
 }
 
