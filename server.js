@@ -209,12 +209,41 @@ function storeDashManifest(mpdXml) {
   return token;
 }
 
+// --- Tracker Pengguna Unik (In-Memory) ---
+const activeClients = new Map(); // hashIP -> lastSeen timestamp
+
+function trackAddonUser(req, res, next) {
+  const rawIp =
+    req.headers["cf-connecting-ip"] ||
+    String(req.headers["x-forwarded-for"] || "").split(",")[0].trim() ||
+    req.socket?.remoteAddress ||
+    "unknown";
+
+  const clientHash = crypto
+    .createHash("sha256")
+    .update(rawIp)
+    .digest("hex")
+    .slice(0, 12);
+
+  activeClients.set(clientHash, Date.now());
+  next();
+}
+
+app.use(["/manifest.json", "/search", "/isrc", "/stream"], trackAddonUser);
+
 app.get("/ping", (req, res) => {
+  const now = Date.now();
+  const activeNow = Array.from(activeClients.values()).filter(
+    (ts) => now - ts < 15 * 60 * 1000, // aktif dalam 15 menit terakhir
+  ).length;
+
   res.setHeader("Cache-Control", "no-store");
   res.json({
     status: "online",
     uptime: Math.floor(process.uptime()),
-    timestamp: Date.now(),
+    uniqueUsers: activeClients.size,
+    activeUsers: activeNow,
+    timestamp: now,
   });
 });
 
@@ -233,16 +262,17 @@ app.get("/", (req, res) => {
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
-      --bg: #07090f;
-      --card: rgba(17, 22, 34, 0.72);
-      --border: rgba(255, 255, 255, 0.08);
-      --text: #f3f6fc;
-      --muted: #94a3b8;
+      --bg: #030612;
+      --text: #f8fafc;
+      --muted: rgba(226, 232, 240, 0.68);
+      --glass-border: rgba(255, 255, 255, 0.2);
+      --glass-highlight: rgba(255, 255, 255, 0.42);
       --accent: #38bdf8;
-      --green: #22c55e;
-      --yellow: #eab308;
-      --red: #ef4444;
+      --green: #4ade80;
+      --yellow: #facc15;
+      --red: #f87171;
     }
+
     body {
       font-family: "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
       background-color: var(--bg);
@@ -255,38 +285,96 @@ app.get("/", (req, res) => {
       position: relative;
       overflow-x: hidden;
     }
-    body::before, body::after {
-      content: "";
+
+    /* Animated Liquid Orbs */
+    .liquid-bg {
       position: fixed;
-      width: 480px;
-      height: 480px;
-      border-radius: 50%;
-      filter: blur(120px);
-      opacity: 0.22;
+      inset: 0;
       z-index: -1;
+      overflow: hidden;
       pointer-events: none;
     }
-    body::before {
-      top: -120px;
-      left: -100px;
-      background: radial-gradient(circle, #38bdf8, transparent 70%);
+    .orb {
+      position: absolute;
+      border-radius: 50%;
+      filter: blur(85px);
+      opacity: 0.55;
+      mix-blend-mode: screen;
+      animation: floatOrb 18s ease-in-out infinite alternate;
     }
-    body::after {
+    .orb-1 {
+      width: 440px;
+      height: 440px;
+      top: -110px;
+      left: -90px;
+      background: radial-gradient(circle, #0ea5e9 0%, #2563eb 55%, transparent 75%);
+    }
+    .orb-2 {
+      width: 480px;
+      height: 480px;
       bottom: -140px;
       right: -100px;
-      background: radial-gradient(circle, #818cf8, transparent 70%);
+      background: radial-gradient(circle, #a855f7 0%, #6366f1 55%, transparent 75%);
+      animation-duration: 22s;
+      animation-delay: -5s;
     }
+    .orb-3 {
+      width: 340px;
+      height: 340px;
+      top: 42%;
+      left: 55%;
+      background: radial-gradient(circle, #2dd4bf 0%, #0284c7 55%, transparent 75%);
+      opacity: 0.35;
+      animation-duration: 26s;
+      animation-delay: -10s;
+    }
+    @keyframes floatOrb {
+      0% { transform: translate(0, 0) scale(1); }
+      50% { transform: translate(45px, -35px) scale(1.12); }
+      100% { transform: translate(-35px, 40px) scale(0.95); }
+    }
+
+    /* Main Liquid Glass Card */
     .card {
+      position: relative;
       width: 100%;
-      max-width: 540px;
-      background: var(--card);
-      backdrop-filter: blur(20px);
-      -webkit-backdrop-filter: blur(20px);
-      border: 1px solid var(--border);
-      border-radius: 24px;
+      max-width: 548px;
+      border-radius: 30px;
       padding: 36px 32px;
-      box-shadow: 0 24px 64px rgba(0, 0, 0, 0.55);
+      background: linear-gradient(
+        135deg,
+        rgba(255, 255, 255, 0.13) 0%,
+        rgba(255, 255, 255, 0.04) 48%,
+        rgba(255, 255, 255, 0.09) 100%
+      );
+      backdrop-filter: blur(36px) saturate(185%);
+      -webkit-backdrop-filter: blur(36px) saturate(185%);
+      border: 1px solid var(--glass-border);
+      box-shadow:
+        0 30px 70px rgba(0, 0, 0, 0.55),
+        inset 0 1.5px 1px var(--glass-highlight),
+        inset 0 -1px 2px rgba(0, 0, 0, 0.35),
+        inset 1px 0 1px rgba(255, 255, 255, 0.16);
+      overflow: hidden;
     }
+
+    /* Interactive Cursor Sheen */
+    .card::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      border-radius: inherit;
+      background: radial-gradient(
+        420px circle at var(--mx, 50%) var(--my, 0%),
+        rgba(255, 255, 255, 0.14),
+        transparent 60%
+      );
+      pointer-events: none;
+      transition: opacity 0.3s ease;
+    }
+
+    .card > * { position: relative; z-index: 1; }
+
     .top-bar {
       display: flex;
       align-items: center;
@@ -301,49 +389,49 @@ app.get("/", (req, res) => {
       gap: 8px;
       font-size: 12px;
       font-weight: 600;
-      color: #86efac;
-      background: rgba(34, 197, 94, 0.12);
-      border: 1px solid rgba(34, 197, 94, 0.25);
-      padding: 6px 12px;
+      color: #bbf7d0;
+      background: linear-gradient(180deg, rgba(34, 197, 94, 0.22), rgba(34, 197, 94, 0.08));
+      border: 1px solid rgba(134, 239, 172, 0.35);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3);
+      padding: 6px 14px;
       border-radius: 999px;
+      backdrop-filter: blur(12px);
       transition: all 0.2s ease;
     }
     .status.offline {
-      color: #fca5a5;
-      background: rgba(239, 68, 68, 0.12);
-      border-color: rgba(239, 68, 68, 0.3);
+      color: #fecaca;
+      background: linear-gradient(180deg, rgba(239, 68, 68, 0.24), rgba(239, 68, 68, 0.08));
+      border-color: rgba(252, 165, 165, 0.35);
     }
     .dot {
       width: 8px;
       height: 8px;
       border-radius: 50%;
       background: var(--green);
-      box-shadow: 0 0 10px var(--green);
+      box-shadow: 0 0 12px var(--green);
       animation: pulse 2s infinite;
     }
     .status.offline .dot {
       background: var(--red);
-      box-shadow: 0 0 10px var(--red);
+      box-shadow: 0 0 12px var(--red);
       animation: none;
     }
     @keyframes pulse {
       0%, 100% { opacity: 1; transform: scale(1); }
       50% { opacity: 0.45; transform: scale(0.85); }
     }
-    .top-right {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
+
     .pill-mono {
       font-family: "JetBrains Mono", monospace;
       font-size: 12px;
-      color: var(--muted);
-      background: rgba(255, 255, 255, 0.05);
-      padding: 5px 10px;
-      border-radius: 8px;
-      border: 1px solid var(--border);
+      color: rgba(248, 250, 252, 0.85);
+      background: rgba(255, 255, 255, 0.08);
+      padding: 6px 12px;
+      border-radius: 999px;
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28);
     }
+
     .brand {
       display: flex;
       align-items: center;
@@ -351,21 +439,24 @@ app.get("/", (req, res) => {
       margin-bottom: 14px;
     }
     .logo {
-      width: 52px;
-      height: 52px;
-      border-radius: 16px;
-      background: linear-gradient(135deg, #38bdf8, #818cf8);
+      width: 54px;
+      height: 54px;
+      border-radius: 18px;
+      background: linear-gradient(135deg, rgba(56, 189, 248, 0.85), rgba(129, 140, 248, 0.85));
+      border: 1px solid rgba(255, 255, 255, 0.4);
       display: flex;
       align-items: center;
       justify-content: center;
-      box-shadow: 0 10px 28px rgba(56, 189, 248, 0.28);
+      box-shadow:
+        0 12px 28px rgba(56, 189, 248, 0.35),
+        inset 0 1.5px 1px rgba(255, 255, 255, 0.65);
       flex-shrink: 0;
     }
     h1 {
-      font-size: 28px;
+      font-size: 29px;
       font-weight: 800;
       letter-spacing: -0.03em;
-      background: linear-gradient(90deg, #ffffff, #bae6fd);
+      background: linear-gradient(180deg, #ffffff 10%, #bae6fd 100%);
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
     }
@@ -373,79 +464,107 @@ app.get("/", (req, res) => {
       font-size: 14px;
       color: var(--muted);
       line-height: 1.6;
-      margin-bottom: 22px;
+      margin-bottom: 24px;
     }
+    .subtitle strong { color: #ffffff; font-weight: 600; }
+
+    /* Glass Metrics */
     .metrics {
       display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 10px;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px;
       margin-bottom: 24px;
     }
     .metric {
-      background: rgba(7, 9, 15, 0.65);
-      border: 1px solid var(--border);
-      border-radius: 14px;
-      padding: 12px 14px;
+      background: linear-gradient(160deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.03));
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28);
+      border-radius: 18px;
+      padding: 13px 15px;
+      transition: transform 0.2s ease, border-color 0.2s ease;
+    }
+    .metric:hover {
+      transform: translateY(-2px);
+      border-color: rgba(255, 255, 255, 0.3);
     }
     .metric-label {
       font-size: 10.5px;
       font-weight: 600;
       text-transform: uppercase;
-      letter-spacing: 0.06em;
+      letter-spacing: 0.08em;
       color: var(--muted);
       margin-bottom: 6px;
     }
     .metric-value {
       font-family: "JetBrains Mono", monospace;
-      font-size: 16px;
+      font-size: 15px;
       font-weight: 600;
       color: var(--text);
     }
-    .metric-value.fast { color: #4ade80; }
-    .metric-value.medium { color: #facc15; }
-    .metric-value.slow { color: #f87171; }
+    .metric-value.fast { color: var(--green); }
+    .metric-value.medium { color: var(--yellow); }
+    .metric-value.slow { color: var(--red); }
+
     .section-label {
       font-size: 11px;
       font-weight: 600;
       text-transform: uppercase;
-      letter-spacing: 0.08em;
+      letter-spacing: 0.09em;
       color: var(--muted);
       margin-bottom: 10px;
     }
+
+    /* Recessed Glass URL Capsule */
     .url-box {
       display: flex;
       align-items: center;
       gap: 8px;
-      background: rgba(7, 9, 15, 0.75);
-      border: 1px solid var(--border);
-      border-radius: 14px;
-      padding: 8px 8px 8px 14px;
+      background: rgba(3, 6, 18, 0.42);
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      box-shadow:
+        inset 0 2px 6px rgba(0, 0, 0, 0.35),
+        0 1px 0 rgba(255, 255, 255, 0.12);
+      border-radius: 18px;
+      padding: 7px 7px 7px 16px;
       margin-bottom: 24px;
     }
     .url-text {
       font-family: "JetBrains Mono", monospace;
       font-size: 12.5px;
-      color: #e2e8f0;
+      color: #f1f5f9;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
       flex: 1;
     }
     .btn-copy {
-      background: linear-gradient(135deg, #38bdf8, #6366f1);
+      background: linear-gradient(180deg, rgba(56, 189, 248, 0.95), rgba(99, 102, 241, 0.95));
       color: #fff;
-      border: none;
-      border-radius: 10px;
-      padding: 9px 16px;
+      border: 1px solid rgba(255, 255, 255, 0.35);
+      box-shadow:
+        0 6px 18px rgba(56, 189, 248, 0.3),
+        inset 0 1px 0 rgba(255, 255, 255, 0.55);
+      border-radius: 12px;
+      padding: 9px 17px;
       font-size: 13px;
       font-weight: 600;
       cursor: pointer;
-      transition: transform 0.15s ease, opacity 0.15s ease;
+      transition: transform 0.15s ease, box-shadow 0.15s ease;
       flex-shrink: 0;
     }
-    .btn-copy:hover { opacity: 0.92; transform: translateY(-1px); }
+    .btn-copy:hover {
+      transform: translateY(-1px);
+      box-shadow:
+        0 8px 22px rgba(56, 189, 248, 0.45),
+        inset 0 1px 0 rgba(255, 255, 255, 0.7);
+    }
     .btn-copy:active { transform: translateY(0); }
-    .btn-copy.copied { background: linear-gradient(135deg, #22c55e, #16a34a); }
+    .btn-copy.copied {
+      background: linear-gradient(180deg, #22c55e, #16a34a);
+      box-shadow: 0 6px 18px rgba(34, 197, 94, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.5);
+    }
+
+    /* Glass Audio Tier Tiles */
     .badges {
       display: grid;
       grid-template-columns: repeat(2, 1fr);
@@ -453,53 +572,65 @@ app.get("/", (req, res) => {
       margin-bottom: 26px;
     }
     .badge {
-      background: rgba(255, 255, 255, 0.03);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 12px 14px;
+      background: linear-gradient(155deg, rgba(255, 255, 255, 0.09), rgba(255, 255, 255, 0.02));
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.24);
+      border-radius: 16px;
+      padding: 13px 15px;
+      transition: transform 0.2s ease, background 0.2s ease, border-color 0.2s ease;
+    }
+    .badge:hover {
+      transform: translateY(-2px);
+      background: linear-gradient(155deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0.04));
+      border-color: rgba(255, 255, 255, 0.28);
     }
     .badge-title {
       font-size: 13px;
       font-weight: 600;
-      color: var(--text);
-      margin-bottom: 2px;
+      color: #ffffff;
+      margin-bottom: 3px;
     }
     .badge-sub {
       font-size: 11.5px;
       color: var(--muted);
     }
+
     .footer {
       display: flex;
       align-items: center;
       justify-content: space-between;
       padding-top: 18px;
-      border-top: 1px solid var(--border);
+      border-top: 1px solid rgba(255, 255, 255, 0.12);
       font-size: 12.5px;
       color: var(--muted);
     }
     .footer a {
-      color: var(--accent);
+      color: #7dd3fc;
       text-decoration: none;
       font-weight: 500;
     }
     .footer a:hover { text-decoration: underline; }
+
     @media (max-width: 480px) {
-      .card { padding: 26px 20px; }
-      .metrics { grid-template-columns: 1fr; }
-      .badges { grid-template-columns: 1fr; }
+      .card { padding: 26px 20px; border-radius: 24px; }
+      .metrics, .badges { grid-template-columns: 1fr; }
     }
   </style>
 </head>
 <body>
-  <main class="card">
+  <div class="liquid-bg">
+    <div class="orb orb-1"></div>
+    <div class="orb orb-2"></div>
+    <div class="orb orb-3"></div>
+  </div>
+
+  <main class="card" id="glassCard">
     <div class="top-bar">
       <div class="status" id="statusPill">
         <span class="dot"></span>
         <span id="statusText">Checking...</span>
       </div>
-      <div class="top-right">
-        <span class="pill-mono">v1.0.2</span>
-      </div>
+      <span class="pill-mono">v1.0.2</span>
     </div>
 
     <div class="brand">
@@ -531,6 +662,10 @@ app.get("/", (req, res) => {
       <div class="metric">
         <div class="metric-label">Uptime</div>
         <div class="metric-value" id="metricUptime">--</div>
+      </div>
+      <div class="metric">
+        <div class="metric-label">Users</div>
+        <div class="metric-value" id="metricUsers">--</div>
       </div>
     </div>
 
@@ -567,6 +702,14 @@ app.get("/", (req, res) => {
   </main>
 
   <script>
+    // Specular sheen mengikuti kursor
+    var card = document.getElementById("glassCard");
+    card.addEventListener("mousemove", function(e) {
+      var rect = card.getBoundingClientRect();
+      card.style.setProperty("--mx", (e.clientX - rect.left) + "px");
+      card.style.setProperty("--my", (e.clientY - rect.top) + "px");
+    });
+
     function formatUptime(sec) {
       var d = Math.floor(sec / 86400);
       var h = Math.floor((sec % 86400) / 3600);
@@ -584,6 +727,7 @@ app.get("/", (req, res) => {
       var metricStatus = document.getElementById("metricStatus");
       var metricPing = document.getElementById("metricPing");
       var metricUptime = document.getElementById("metricUptime");
+      var metricUsers = document.getElementById("metricUsers");
 
       var start = performance.now();
       try {
@@ -602,6 +746,7 @@ app.get("/", (req, res) => {
           "metric-value " + (latency < 150 ? "fast" : latency < 350 ? "medium" : "slow");
 
         metricUptime.textContent = formatUptime(data.uptime || 0);
+        metricUsers.textContent = (data.activeUsers || 0) + " active / " + (data.uniqueUsers || 0);
       } catch (err) {
         pill.classList.add("offline");
         statusText.textContent = "Server Offline";
