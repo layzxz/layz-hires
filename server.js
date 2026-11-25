@@ -205,13 +205,13 @@ function storeDashManifest(mpdXml) {
 }
 
 app.get("/", (req, res) => {
-  res.send("Lz addon is running!");
+  res.send("Layz addon is running!");
 });
 
 app.get("/manifest.json", (req, res) => {
   res.json({
     id: "id.web.layyyz.lzaddon",
-    name: "Lz Hi-Res",
+    name: "Layz Hi-Res",
     version: "1.0.1",
     description: "Hi-Res & Lossless addon for BitChord",
     resources: ["search", "stream", "isrc"],
