@@ -234,7 +234,7 @@ app.use(["/manifest.json", "/search", "/isrc", "/stream"], trackAddonUser);
 app.get("/ping", (req, res) => {
   const now = Date.now();
   const activeNow = Array.from(activeClients.values()).filter(
-    (ts) => now - ts < 15 * 60 * 1000, // aktif dalam 15 menit terakhir
+    (ts) => now - ts < 15 * 60 * 1000,
   ).length;
 
   res.setHeader("Cache-Control", "no-store");
@@ -256,9 +256,7 @@ app.get("/", (req, res) => {
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Layz Hi-Res — BitChord Addon</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link href="https://fonts.cdnfonts.com/css/sf-pro-display" rel="stylesheet" />
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
@@ -271,10 +269,14 @@ app.get("/", (req, res) => {
       --green: #4ade80;
       --yellow: #facc15;
       --red: #f87171;
+      --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Helvetica Neue", sans-serif;
+      --font-mono: "SF Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
     }
 
     body {
-      font-family: "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
+      font-family: var(--font-sans);
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
       background-color: var(--bg);
       color: var(--text);
       min-height: 100vh;
@@ -389,6 +391,7 @@ app.get("/", (req, res) => {
       gap: 8px;
       font-size: 12px;
       font-weight: 600;
+      letter-spacing: -0.01em;
       color: #bbf7d0;
       background: linear-gradient(180deg, rgba(34, 197, 94, 0.22), rgba(34, 197, 94, 0.08));
       border: 1px solid rgba(134, 239, 172, 0.35);
@@ -422,7 +425,7 @@ app.get("/", (req, res) => {
     }
 
     .pill-mono {
-      font-family: "JetBrains Mono", monospace;
+      font-family: var(--font-mono);
       font-size: 12px;
       color: rgba(248, 250, 252, 0.85);
       background: rgba(255, 255, 255, 0.08);
@@ -453,17 +456,18 @@ app.get("/", (req, res) => {
       flex-shrink: 0;
     }
     h1 {
-      font-size: 29px;
-      font-weight: 800;
-      letter-spacing: -0.03em;
+      font-size: 30px;
+      font-weight: 700;
+      letter-spacing: -0.025em;
       background: linear-gradient(180deg, #ffffff 10%, #bae6fd 100%);
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
     }
     .subtitle {
-      font-size: 14px;
+      font-size: 14.5px;
       color: var(--muted);
-      line-height: 1.6;
+      line-height: 1.55;
+      letter-spacing: -0.01em;
       margin-bottom: 24px;
     }
     .subtitle strong { color: #ffffff; font-weight: 600; }
@@ -491,12 +495,12 @@ app.get("/", (req, res) => {
       font-size: 10.5px;
       font-weight: 600;
       text-transform: uppercase;
-      letter-spacing: 0.08em;
+      letter-spacing: 0.06em;
       color: var(--muted);
       margin-bottom: 6px;
     }
     .metric-value {
-      font-family: "JetBrains Mono", monospace;
+      font-family: var(--font-mono);
       font-size: 15px;
       font-weight: 600;
       color: var(--text);
@@ -509,7 +513,7 @@ app.get("/", (req, res) => {
       font-size: 11px;
       font-weight: 600;
       text-transform: uppercase;
-      letter-spacing: 0.09em;
+      letter-spacing: 0.07em;
       color: var(--muted);
       margin-bottom: 10px;
     }
@@ -529,7 +533,7 @@ app.get("/", (req, res) => {
       margin-bottom: 24px;
     }
     .url-text {
-      font-family: "JetBrains Mono", monospace;
+      font-family: var(--font-mono);
       font-size: 12.5px;
       color: #f1f5f9;
       overflow: hidden;
@@ -538,6 +542,7 @@ app.get("/", (req, res) => {
       flex: 1;
     }
     .btn-copy {
+      font-family: var(--font-sans);
       background: linear-gradient(180deg, rgba(56, 189, 248, 0.95), rgba(99, 102, 241, 0.95));
       color: #fff;
       border: 1px solid rgba(255, 255, 255, 0.35);
@@ -548,6 +553,7 @@ app.get("/", (req, res) => {
       padding: 9px 17px;
       font-size: 13px;
       font-weight: 600;
+      letter-spacing: -0.01em;
       cursor: pointer;
       transition: transform 0.15s ease, box-shadow 0.15s ease;
       flex-shrink: 0;
@@ -585,8 +591,9 @@ app.get("/", (req, res) => {
       border-color: rgba(255, 255, 255, 0.28);
     }
     .badge-title {
-      font-size: 13px;
+      font-size: 13.5px;
       font-weight: 600;
+      letter-spacing: -0.01em;
       color: #ffffff;
       margin-bottom: 3px;
     }
@@ -702,7 +709,6 @@ app.get("/", (req, res) => {
   </main>
 
   <script>
-    // Specular sheen mengikuti kursor
     var card = document.getElementById("glassCard");
     card.addEventListener("mousemove", function(e) {
       var rect = card.getBoundingClientRect();
