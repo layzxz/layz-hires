@@ -1,7 +1,5 @@
 # 🎵 Layz Hi-Res
 
-> 🌐 **Live Dashboard:** [https://layyyz.web.id](https://layyyz.web.id) · 📄 **Manifest:** `https://layyyz.web.id/manifest.json`
-
 Custom audio streaming addon untuk **BitChord** yang mendukung pemutaran **Hi-Res Lossless (24-bit FLAC)**, **Lossless (16-bit FLAC)**, **Dolby Atmos**, serta **High/Low AAC** dengan pembaruan token otomatis dan antarmuka status bergaya *Liquid Glass*.
 
 ---
