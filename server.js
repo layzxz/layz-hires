@@ -205,15 +205,15 @@ function storeDashManifest(mpdXml) {
 }
 
 app.get("/", (req, res) => {
-  res.send("lz addon is running!");
+  res.send("Lz addon is running!");
 });
 
 app.get("/manifest.json", (req, res) => {
   res.json({
     id: "id.web.layyyz.lzaddon",
-    name: "lz addon",
-    version: "1.0.0",
-    description: "Tidal Hi-Res & Lossless addon for BitChord",
+    name: "Lz Hi-Res",
+    version: "1.0.1",
+    description: "Hi-Res & Lossless addon for BitChord",
     resources: ["search", "stream", "isrc"],
     bitchordAuth: AUTH_MODE === "enforce",
   });
