@@ -19,6 +19,7 @@ import {
 export const issuedTrials = new Map();
 export const activeClients = new Map();
 export const activeClientInfo = new Map();
+export const revokedUsers = new Set();
 const oauthStates = new Map();
 
 export async function verifyBitChordAuth(req, res, next) {
@@ -62,7 +63,15 @@ export function requireUserToken(req, res, next) {
     });
   }
 
-  const isVipNow = payload.vip || VIP_DISCORD_IDS.has(String(payload.uid));
+  const uid = String(payload.uid);
+  const isVipNow = payload.vip || VIP_DISCORD_IDS.has(uid);
+
+  if (!isVipNow && revokedUsers.has(uid)) {
+    return res.status(403).json({
+      error: "Your access has been revoked by the owner.",
+    });
+  }
+
   if (!isVipNow && payload.exp && Date.now() > payload.exp) {
     return res.status(403).json({
       error: `Your ${TRIAL_HOURS}-hour trial has expired. Contact the owner for permanent access.`,
@@ -189,6 +198,8 @@ export function registerAuthRoutes(app) {
 
       if (isVip) {
         addonToken = signPayload({ uid, u: username, vip: true, exp: 0 });
+      } else if (revokedUsers.has(uid)) {
+        return res.redirect("/?auth_error=slots_full");
       } else if (issuedTrials.has(uid)) {
         const existing = issuedTrials.get(uid);
         addonToken = existing.token;
@@ -248,6 +259,32 @@ export function registerAuthRoutes(app) {
       }));
 
     return res.json({ total: users.length, users });
+  });
+
+  app.post("/admin/revoke/:uid", (req, res) => {
+    const cookies = parseCookies(req);
+    const session = cookies.lz_session
+      ? verifySignedPayload(cookies.lz_session)
+      : null;
+
+    if (
+      !session ||
+      (!session.vip && !VIP_DISCORD_IDS.has(String(session.uid)))
+    ) {
+      return res.status(403).json({ error: "VIP only" });
+    }
+
+    const targetUid = String(req.params.uid || "").trim();
+    if (!targetUid || VIP_DISCORD_IDS.has(targetUid)) {
+      return res.status(400).json({ error: "Cannot revoke VIP or empty user" });
+    }
+
+    revokedUsers.add(targetUid);
+    issuedTrials.delete(targetUid);
+    activeClients.delete(`dc:${targetUid}`);
+    activeClientInfo.delete(`dc:${targetUid}`);
+
+    return res.json({ ok: true, uid: targetUid });
   });
 
   app.get("/logout", (req, res) => {

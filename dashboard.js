@@ -396,6 +396,22 @@ export function renderDashboard(req, res) {
     .admin-lastseen {
       font-family: var(--font-mono); font-size: 11px; color: var(--muted);
     }
+    .btn-revoke {
+      font-family: var(--font-sans);
+      font-size: 11px;
+      font-weight: 600;
+      color: #fca5a5;
+      background: rgba(239, 68, 68, 0.16);
+      border: 1px solid rgba(248, 113, 113, 0.35);
+      border-radius: 8px;
+      padding: 3px 8px;
+      cursor: pointer;
+      transition: background 0.15s ease, color 0.15s ease;
+    }
+    .btn-revoke:hover {
+      background: rgba(239, 68, 68, 0.32);
+      color: #fff;
+    }
     .admin-empty {
       font-size: 12px; color: var(--muted); text-align: center; padding: 6px 0;
     }
@@ -582,6 +598,24 @@ export function renderDashboard(req, res) {
     updateTrialCountdown();
     setInterval(updateTrialCountdown, 1000);
 
+    async function revokeUser(btn) {
+      var uid = btn.getAttribute("data-uid");
+      var name = btn.getAttribute("data-name") || uid;
+      if (!confirm("Revoke access for " + name + "?")) return;
+      btn.disabled = true;
+      btn.textContent = "...";
+      try {
+        var resp = await fetch("/admin/revoke/" + encodeURIComponent(uid), { method: "POST" });
+        if (resp.ok) {
+          loadAdminUsers();
+          checkPing();
+        }
+      } catch (err) {
+        btn.disabled = false;
+        btn.textContent = "Revoke";
+      }
+    }
+
     async function loadAdminUsers() {
       var box = document.getElementById("adminUsersList");
       if (!box) return;
@@ -596,6 +630,9 @@ export function renderDashboard(req, res) {
         box.innerHTML = data.users.map(function(u) {
           var pillClass = u.role === "VIP" ? "vip" : "trial";
           var dotClass = u.isActive ? "status-dot active" : "status-dot";
+          var revokeBtn = (u.role !== "VIP" && u.uid)
+            ? '<button class="btn-revoke" data-uid="' + escapeText(u.uid) + '" data-name="' + escapeText(u.username) + '" onclick="revokeUser(this)">Revoke</button>'
+            : '';
           return (
             '<div class="admin-user-row">' +
               '<div class="admin-user-left">' +
@@ -605,6 +642,7 @@ export function renderDashboard(req, res) {
               '<div class="admin-user-right">' +
                 '<span class="tier-pill ' + pillClass + '">' + u.role + '</span>' +
                 '<span class="admin-lastseen">' + formatAgo(u.lastSeen) + '</span>' +
+                revokeBtn +
               '</div>' +
             '</div>'
           );
