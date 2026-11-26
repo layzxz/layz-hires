@@ -877,14 +877,6 @@ app.get("/", (req, res) => {
 
     <div class="metrics">
       <div class="metric">
-        <div class="metric-label">Status</div>
-        <div class="metric-value fast" id="metricStatus">Online</div>
-      </div>
-      <div class="metric">
-        <div class="metric-label">Latency</div>
-        <div class="metric-value" id="metricPing">-- ms</div>
-      </div>
-      <div class="metric">
         <div class="metric-label">Uptime</div>
         <div class="metric-value" id="metricUptime">--</div>
       </div>
@@ -962,8 +954,6 @@ app.get("/", (req, res) => {
     async function checkPing() {
       var pill = document.getElementById("statusPill");
       var statusText = document.getElementById("statusText");
-      var metricStatus = document.getElementById("metricStatus");
-      var metricPing = document.getElementById("metricPing");
       var metricUptime = document.getElementById("metricUptime");
       var metricUsers = document.getElementById("metricUsers");
 
@@ -976,22 +966,11 @@ app.get("/", (req, res) => {
 
         pill.classList.remove("offline");
         statusText.textContent = "Server Online · " + latency + " ms";
-        metricStatus.textContent = "Online";
-        metricStatus.className = "metric-value fast";
-
-        metricPing.textContent = latency + " ms";
-        metricPing.className =
-          "metric-value " + (latency < 150 ? "fast" : latency < 350 ? "medium" : "slow");
-
         metricUptime.textContent = formatUptime(data.uptime || 0);
         metricUsers.textContent = (data.activeUsers || 0) + " active / " + (data.uniqueUsers || 0);
       } catch (err) {
         pill.classList.add("offline");
         statusText.textContent = "Server Offline";
-        metricStatus.textContent = "Offline";
-        metricStatus.className = "metric-value slow";
-        metricPing.textContent = "Timeout";
-        metricPing.className = "metric-value slow";
       }
     }
 
