@@ -20,7 +20,7 @@ A custom audio streaming addon for **BitChord** with automatic Hi-Res 24-bit FLA
 2. Click **Login with Discord to Generate URL** and authorize your account.
 3. Click **Copy URL** to copy your **Personal Manifest URL**.
 4. In **BitChord**, go to:
-   **Profile → Settings → Sources → Add an addon → Paste URL**.
+   **Profiles → Settings → Sources → Add an addon → Paste URL**.
 
 ## Local Development
 
