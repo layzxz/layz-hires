@@ -890,7 +890,7 @@ app.get("/", (req, res) => {
 
     <div class="section-label">How to Add</div>
     <div class="howto-box">
-      Open BitChord<span class="howto-sep">›</span>Profile<span class="howto-sep">›</span>Settings<span class="howto-sep">›</span>Sources<span class="howto-sep">›</span>Add an addon<span class="howto-sep">›</span>Paste URL
+      Open BitChord<span class="howto-sep">›</span>Profiles<span class="howto-sep">›</span>Settings<span class="howto-sep">›</span>Sources<span class="howto-sep">›</span>Add an addon<span class="howto-sep">›</span>Paste URL
     </div>
 
     <div class="section-label">Supported Audio Tiers</div>
