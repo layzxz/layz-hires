@@ -795,37 +795,24 @@ app.get("/", (req, res) => {
     .btn-copy.copied { background: linear-gradient(180deg, #22c55e, #16a34a); }
 
     .howto-box {
-      background: linear-gradient(155deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.02));
-      border: 1px solid rgba(255, 255, 255, 0.14);
-      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22);
-      border-radius: 16px;
-      padding: 14px 16px;
-      margin-bottom: 24px;
+      background: linear-gradient(155deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.02));
+      border: 1px solid rgba(255, 255, 255, 0.13);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2);
+      border-radius: 14px;
+      padding: 12px 15px;
+      margin-bottom: 20px;
       font-size: 12.5px;
-      color: var(--muted);
-      line-height: 1.65;
+      color: #e2e8f0;
+      line-height: 1.6;
+      text-align: center;
     }
-    .howto-steps {
-      display: flex;
-      flex-wrap: wrap;
-      align-items: center;
-      gap: 6px;
-    }
-    .howto-pill {
-      background: rgba(255, 255, 255, 0.08);
-      border: 1px solid rgba(255, 255, 255, 0.14);
-      color: #f8fafc;
-      font-weight: 600;
-      font-size: 11.5px;
-      padding: 3px 9px;
-      border-radius: 8px;
-    }
-    .howto-arrow {
+    .howto-sep {
       color: var(--accent);
+      margin: 0 5px;
       font-weight: 700;
     }
 
-    .badges { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 26px; }
+    .badges { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 0px; }
     .badge {
       background: linear-gradient(155deg, rgba(255, 255, 255, 0.09), rgba(255, 255, 255, 0.02));
       border: 1px solid rgba(255, 255, 255, 0.14);
@@ -850,7 +837,7 @@ app.get("/", (req, res) => {
     .footer a:hover { text-decoration: underline; }
 
     @media (max-width: 480px) {
-      .card { padding: 26px 20px; border-radius: 24px; }
+      .card { padding: 28px 28px; border-radius: 24px; }
       .metrics, .badges { grid-template-columns: 1fr; }
     }
   </style>
@@ -911,19 +898,7 @@ app.get("/", (req, res) => {
 
     <div class="section-label">How to Add</div>
     <div class="howto-box">
-      <div class="howto-steps">
-        <span class="howto-pill">Open BitChord</span>
-        <span class="howto-arrow">→</span>
-        <span class="howto-pill">Profile</span>
-        <span class="howto-arrow">→</span>
-        <span class="howto-pill">Settings</span>
-        <span class="howto-arrow">→</span>
-        <span class="howto-pill">Sources</span>
-        <span class="howto-arrow">→</span>
-        <span class="howto-pill">Add an addon</span>
-        <span class="howto-arrow">→</span>
-        <span class="howto-pill">Paste URL</span>
-      </div>
+      Open BitChord<span class="howto-sep">›</span>Profile<span class="howto-sep">›</span>Settings<span class="howto-sep">›</span>Sources<span class="howto-sep">›</span>Add an addon<span class="howto-sep">›</span>Paste URL
     </div>
 
     <div class="section-label">Supported Audio Tiers</div>
@@ -944,11 +919,6 @@ app.get("/", (req, res) => {
         <div class="badge-title">High &amp; Low</div>
         <div class="badge-sub">AAC · 320 kbps &amp; 128 kbps</div>
       </div>
-    </div>
-
-    <div class="footer">
-      <span>Paste URL in BitChord Sources menu</span>
-      <span>Protected Access</span>
     </div>
   </main>
 
