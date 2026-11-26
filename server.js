@@ -794,6 +794,37 @@ app.get("/", (req, res) => {
     .btn-copy:hover { transform: translateY(-1px); }
     .btn-copy.copied { background: linear-gradient(180deg, #22c55e, #16a34a); }
 
+    .howto-box {
+      background: linear-gradient(155deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.02));
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22);
+      border-radius: 16px;
+      padding: 14px 16px;
+      margin-bottom: 24px;
+      font-size: 12.5px;
+      color: var(--muted);
+      line-height: 1.65;
+    }
+    .howto-steps {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 6px;
+    }
+    .howto-pill {
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      color: #f8fafc;
+      font-weight: 600;
+      font-size: 11.5px;
+      padding: 3px 9px;
+      border-radius: 8px;
+    }
+    .howto-arrow {
+      color: var(--accent);
+      font-weight: 700;
+    }
+
     .badges { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 26px; }
     .badge {
       background: linear-gradient(155deg, rgba(255, 255, 255, 0.09), rgba(255, 255, 255, 0.02));
@@ -877,6 +908,23 @@ app.get("/", (req, res) => {
     </div>
 
     ${accessSectionHtml}
+
+    <div class="section-label">How to Add</div>
+    <div class="howto-box">
+      <div class="howto-steps">
+        <span class="howto-pill">Open BitChord</span>
+        <span class="howto-arrow">→</span>
+        <span class="howto-pill">Profile</span>
+        <span class="howto-arrow">→</span>
+        <span class="howto-pill">Settings</span>
+        <span class="howto-arrow">→</span>
+        <span class="howto-pill">Sources</span>
+        <span class="howto-arrow">→</span>
+        <span class="howto-pill">Add an addon</span>
+        <span class="howto-arrow">→</span>
+        <span class="howto-pill">Paste URL</span>
+      </div>
+    </div>
 
     <div class="section-label">Supported Audio Tiers</div>
     <div class="badges">
