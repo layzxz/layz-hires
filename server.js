@@ -68,7 +68,7 @@ async function verifyBitChordAuth(req, res, next) {
     req.bitchordAuth = payload;
     return next();
   } catch (err) {
-    console.warn(`[bitchord-auth] Gagal verifikasi: ${err.message}`);
+    console.warn(`[bitchord-auth] Verification failed: ${err.message}`);
     if (AUTH_MODE === "enforce") {
       return res
         .status(401)
@@ -132,7 +132,7 @@ function escapeHtml(str) {
     .replace(/'/g, "&#39;");
 }
 
-// In-memory store agar user non-VIP tidak bisa reset timer trial dengan login ulang
+// In-memory store to prevent non-VIP users from resetting trial timer on re-login
 const issuedTrials = new Map(); // discordId -> { token, exp }
 const oauthStates = new Map(); // state -> expiresAt
 
@@ -141,14 +141,14 @@ function requireUserToken(req, res, next) {
   const payload = verifySignedPayload(token);
   if (!payload || !payload.uid) {
     return res.status(401).json({
-      error: "Token tidak valid. Silakan login Discord di dashboard.",
+      error: "Invalid token. Please log in with Discord on the dashboard.",
     });
   }
 
   const isVipNow = payload.vip || VIP_DISCORD_IDS.has(String(payload.uid));
   if (!isVipNow && payload.exp && Date.now() > payload.exp) {
     return res.status(403).json({
-      error: `Masa trial ${TRIAL_HOURS} jam sudah habis. Hubungi owner untuk akses permanen.`,
+      error: `Your ${TRIAL_HOURS}-hour trial has expired. Contact the owner for permanent access.`,
     });
   }
 
@@ -177,7 +177,7 @@ async function getTidalAccessToken(forceRefresh = false) {
   if (!refreshToken) {
     if (!tidalAccessToken) {
       throw new Error(
-        "TIDAL_ACCESS_TOKEN atau TIDAL_REFRESH_TOKEN belum diisi di Environment Variables",
+        "TIDAL_ACCESS_TOKEN or TIDAL_REFRESH_TOKEN is not set in Environment Variables",
       );
     }
     return tidalAccessToken;
@@ -217,14 +217,16 @@ async function getTidalAccessToken(forceRefresh = false) {
 
     if (!resp.ok) {
       const text = await resp.text();
-      throw new Error(`Gagal refresh token Tidal (${resp.status}): ${text}`);
+      throw new Error(
+        `Failed to refresh Tidal token (${resp.status}): ${text}`,
+      );
     }
 
     const data = await resp.json();
     tidalAccessToken = data.access_token;
     tokenExpiresAt = Date.now() + or(data.expires_in, 3600) * 1000;
     console.log(
-      `[tidal-auth] Token berhasil diperbarui (berlaku ${or(data.expires_in, 3600)} detik)`,
+      `[tidal-auth] Token refreshed (valid for ${or(data.expires_in, 3600)}s)`,
     );
     return tidalAccessToken;
   })();
@@ -254,7 +256,7 @@ async function tidalFetch(path, params = {}, retried = false) {
   });
 
   if (resp.status === 401 && !retried && process.env.TIDAL_REFRESH_TOKEN) {
-    console.warn("[tidal-auth] Token 401, mencoba auto-refresh...");
+    console.warn("[tidal-auth] Token 401, attempting auto-refresh...");
     return tidalFetch(path, params, true);
   }
 
@@ -305,7 +307,7 @@ function storeDashManifest(mpdXml) {
   return token;
 }
 
-// --- Tracker Pengguna Unik (In-Memory) ---
+// --- Unique User Tracker (In-Memory) ---
 const activeClients = new Map();
 
 function trackAddonUser(req, res, next) {
@@ -331,7 +333,9 @@ function trackAddonUser(req, res, next) {
 // --- Discord OAuth2 Routes ---
 app.get("/auth/discord", (req, res) => {
   if (!DISCORD_AUTH_ENABLED) {
-    return res.status(503).send("Discord OAuth belum dikonfigurasi di server.");
+    return res
+      .status(503)
+      .send("Discord OAuth is not configured on this server.");
   }
 
   const state = crypto.randomBytes(16).toString("hex");
@@ -400,14 +404,14 @@ app.get("/auth/discord/callback", async (req, res) => {
     let exp = 0;
 
     if (isVip) {
-      addonToken = signPayload({ uid, vip: true, exp: 0 });
+      addonToken = signPayload({ uid, u: username, vip: true, exp: 0 });
     } else if (issuedTrials.has(uid)) {
       const existing = issuedTrials.get(uid);
       addonToken = existing.token;
       exp = existing.exp;
     } else {
       exp = Date.now() + TRIAL_HOURS * 3600 * 1000;
-      addonToken = signPayload({ uid, vip: false, exp });
+      addonToken = signPayload({ uid, u: username, vip: false, exp });
       issuedTrials.set(uid, { token: addonToken, exp });
     }
 
@@ -484,7 +488,7 @@ app.get("/", (req, res) => {
       <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
         <path d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028c.462-.63.874-1.295 1.226-1.994.021-.041.001-.09-.041-.106a13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.028zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z"/>
       </svg>
-      <span>Login with Discord untuk Generate URL</span>
+      <span>Login with Discord to Generate URL</span>
     </a>`;
   } else {
     const badgeHtml = isVip
@@ -507,7 +511,7 @@ app.get("/", (req, res) => {
     <div class="section-label">Personal Manifest URL</div>
     ${
       isExpired
-        ? `<div class="expired-box">Masa trial ${TRIAL_HOURS} jam kamu sudah berakhir. Hubungi owner untuk upgrade ke akses permanen.</div>`
+        ? `<div class="expired-box">Your ${TRIAL_HOURS}-hour trial has ended. Contact the owner to upgrade to permanent access.</div>`
         : `<div class="url-box">
       <span class="url-text" id="manifestUrl">${manifestUrl}</span>
       <button class="btn-copy" id="copyBtn" onclick="copyManifest()">Copy URL</button>
@@ -517,7 +521,7 @@ app.get("/", (req, res) => {
 
   res.setHeader("Content-Type", "text/html; charset=utf-8");
   res.send(`<!DOCTYPE html>
-<html lang="id">
+<html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -850,7 +854,7 @@ app.get("/", (req, res) => {
     </div>
 
     <p class="subtitle">
-      Custom audio streaming addon untuk <strong>BitChord</strong>. Mendukung streaming Hi-Res 24-bit FLAC, Lossless 16-bit, hingga Dolby Atmos secara otomatis.
+      Custom audio streaming addon for <strong>BitChord</strong>. Automatically supports Hi-Res 24-bit FLAC, 16-bit Lossless, and Dolby Atmos streaming.
     </p>
 
     <div class="metrics">
@@ -895,7 +899,7 @@ app.get("/", (req, res) => {
     </div>
 
     <div class="footer">
-      <span>Paste URL di menu Sources BitChord</span>
+      <span>Paste URL in BitChord Sources menu</span>
       <span>Protected Access</span>
     </div>
   </main>
@@ -994,12 +998,45 @@ app.get("/", (req, res) => {
 });
 
 // --- Addon Core Handlers ---
+function formatTimeLeft(ms) {
+  if (ms <= 0) return "Expired";
+  const totalMins = Math.floor(ms / 60000);
+  const d = Math.floor(totalMins / 1440);
+  const h = Math.floor((totalMins % 1440) / 60);
+  const m = totalMins % 60;
+  if (d > 0) return `${d}d ${h}h left`;
+  if (h > 0) return `${h}h ${m}m left`;
+  return `${m}m left`;
+}
+
 function handleManifest(req, res) {
+  const user = req.addonUser;
+  let addonName = "Layz Hi-Res";
+  let description = "FLAC · Lossless · Hi-Res";
+
+  if (user) {
+    const uname = user.u || "User";
+    const isVip = user.vip || VIP_DISCORD_IDS.has(String(user.uid));
+
+    if (isVip) {
+      addonName = `${uname} · VIP`;
+      description = `${uname} · VIP Permanent · FLAC · Lossless · Hi-Res`;
+    } else if (user.exp) {
+      const timeLeft = formatTimeLeft(user.exp - Date.now());
+      addonName =
+        timeLeft === "Expired"
+          ? `${uname} · Expired`
+          : `${uname} · Trial ${timeLeft}`;
+      description = `${uname} · Free Trial ${timeLeft} · FLAC · Lossless · Hi-Res`;
+    }
+  }
+
+  res.setHeader("Cache-Control", "no-store");
   res.json({
     id: "id.web.layyyz.lzaddon",
-    name: "Layz Hi-Res",
+    name: addonName,
     version: "1.1.0",
-    description: "Hi-Res & Lossless addon for BitChord",
+    description,
     resources: ["search", "stream", "isrc"],
     bitchordAuth: AUTH_MODE === "enforce",
     settings: [
@@ -1117,7 +1154,7 @@ async function handleStream(req, res) {
       const bts = JSON.parse(decodedManifest);
       const streamUrl = bts.urls?.[0];
       if (!streamUrl)
-        return res.status(404).json({ error: "Stream URL kosong" });
+        return res.status(404).json({ error: "Empty stream URL" });
 
       const codecs = or(bts.codecs, "").toLowerCase();
       const mime = or(bts.mimeType, "").toLowerCase();
@@ -1181,7 +1218,7 @@ async function handleStream(req, res) {
 
     return res
       .status(415)
-      .json({ error: `Manifest tidak didukung: ${playback.manifestMimeType}` });
+      .json({ error: `Unsupported manifest: ${playback.manifestMimeType}` });
   } catch (err) {
     console.error("[/stream]", err.message);
     res.status(500).json({ error: err.message });
@@ -1217,11 +1254,11 @@ app.get(
   handleStream,
 );
 
-// --- Root Routes (Diblokir otomatis jika Discord Auth aktif) ---
+// --- Root Routes (Automatically blocked when Discord Auth is enabled) ---
 function blockIfAuthEnabled(req, res, next) {
   if (DISCORD_AUTH_ENABLED) {
     return res.status(401).json({
-      error: `Akses membutuhkan login Discord. Buka ${PUBLIC_URL} untuk mendapatkan URL manifest unik.`,
+      error: `Discord login required. Visit ${PUBLIC_URL} to generate your personal manifest URL.`,
     });
   }
   return next();
@@ -1261,6 +1298,6 @@ app.get("/dash/:token.mpd", (req, res) => {
 
 app.listen(PORT, () => {
   console.log(
-    `lz addon aktif di port ${PORT} (${PUBLIC_URL}) | Discord Auth: ${DISCORD_AUTH_ENABLED ? "ON" : "OFF"} | Trial: ${TRIAL_HOURS}h`,
+    `lz addon running on port ${PORT} (${PUBLIC_URL}) | Discord Auth: ${DISCORD_AUTH_ENABLED ? "ON" : "OFF"} | Trial: ${TRIAL_HOURS}h`,
   );
 });
