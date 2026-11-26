@@ -172,12 +172,22 @@ export function registerAuthRoutes(app) {
         : `https://cdn.discordapp.com/embed/avatars/${Number(BigInt(uid) % 5n)}.png`;
 
       const isVip = VIP_DISCORD_IDS.has(uid);
-      if (!isVip) {
-        return res.redirect("/?auth_error=slots_full");
-      }
+      let addonToken;
+      let exp = 0;
 
-      const exp = 0;
-      const addonToken = signPayload({ uid, u: username, vip: true, exp });
+      if (isVip) {
+        addonToken = signPayload({ uid, u: username, vip: true, exp: 0 });
+      } else if (issuedTrials.has(uid)) {
+        const existing = issuedTrials.get(uid);
+        addonToken = existing.token;
+        exp = existing.exp;
+      } else if (issuedTrials.size >= 2) {
+        return res.redirect("/?auth_error=slots_full");
+      } else {
+        exp = Date.now() + TRIAL_HOURS * 3600 * 1000;
+        addonToken = signPayload({ uid, u: username, vip: false, exp });
+        issuedTrials.set(uid, { token: addonToken, exp });
+      }
 
       const sessionCookie = signPayload({
         uid,
