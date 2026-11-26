@@ -1,72 +1,30 @@
-# 🎵 Layz Hi-Res
+# Layz Hi-Res — BitChord Addon
 
-Custom audio streaming addon untuk **BitChord** yang mendukung pemutaran **Hi-Res Lossless (24-bit FLAC)**, **Lossless (16-bit FLAC)**, **Dolby Atmos**, serta **High/Low AAC** dengan pembaruan token otomatis dan antarmuka status bergaya *Liquid Glass*.
+A custom audio streaming addon for **BitChord** with automatic Hi-Res 24-bit FLAC, 16-bit Lossless, and Dolby Atmos support, featuring a dark-glass web dashboard and Discord OAuth2 access control.
 
----
+## Features
 
-## ✨ Fitur Utama
+- **Multi-Tier Audio Quality**
+  - **Hi-Res Lossless:** FLAC · 24-bit / up to 192 kHz (DASH & direct)
+  - **Lossless:** FLAC · 16-bit / 44.1 kHz
+  - **Dolby Atmos:** E-AC-3 JOC · Spatial Audio
+  - **High & Low:** AAC · 320 kbps & 128 kbps
+- **Discord OAuth2 Access Control:** Generates a unique, signed personal manifest URL (`/u/<token>/manifest.json`) per user.
+- **Trial & VIP System:** Configurable trial duration (default: 24 hours) for standard users and permanent access for whitelisted VIP Discord IDs.
+- **Live Dashboard:** Real-time server status, latency, uptime, active user count, and live trial countdown.
+- **BitChord Manifest Status:** Displays the user's Discord username and VIP/Trial status directly inside BitChord's addon list.
 
-- **Multi-Quality Audio Tiers** — Mendukung pilihan kualitas langsung dari UI BitChord:
-  - `Hi-Res Lossless (24-bit)` — FLAC hingga 24-bit / 192 kHz (DASH)
-  - `Lossless (16-bit)` — FLAC 16-bit / 44.1 kHz
-  - `Dolby Atmos` — E-AC-3 JOC / AC-4 dengan pencarian otomatis versi Atmos
-  - `High · 320 kbps` & `Low · 128 kbps` — AAC
-- **Auto-Refresh Token** — Memperbarui access token secara otomatis menggunakan `TIDAL_REFRESH_TOKEN` tanpa perlu restart server.
-- **ISRC & Track Search** — Pencarian lagu akurat berbasis judul/artis maupun kode ISRC.
-- **Liquid Glass Dashboard** — Halaman depan (`/`) dengan indikator *Server Online*, pengukuran *latency* real-time (`/ping`), *uptime*, dan penghitung pengguna aktif.
-- **BitChord Auth Ready** — Mendukung verifikasi JWT/JWKS BitChord (`off`, `log`, atau `enforce`).
+## How to Use
 
----
+1. Open the dashboard at **`https://layyyz.web.id`**.
+2. Click **Login with Discord to Generate URL** and authorize your account.
+3. Click **Copy URL** to copy your **Personal Manifest URL**.
+4. In **BitChord**, go to:
+   **Profile → Settings → Sources → Add an addon → Paste URL**.
 
-## 🚀 Cara Pasang di BitChord
+## Local Development
 
-1. Deploy server ini terlebih dahulu (misalnya di Render) menggunakan langkah **Self-Hosting** di bawah.
-2. Buka aplikasi **BitChord** → masuk ke menu **Sources / Addons**.
-3. Tambahkan URL manifest dari server kamu:
-   ```text
-   [https://your-domain.com/manifest.json](https://your-domain.com/manifest.json)
-   ```
-4. Aktifkan **Layz Hi-Res** dan pilih kualitas audio yang diinginkan lewat menu dropdown kualitas.
-
----
-
-## 🛠️ Self-Hosting
-
-### 1. Clone & Install
 ```bash
-git clone [https://github.com/layzxz/lz-addon.git](https://github.com/layzxz/lz-addon.git)
-cd lz-addon
 npm install
+npm start
 ```
-
-### 2. Environment Variables
-Buat file `.env` (untuk lokal) atau atur di dashboard **Environment** (jika deploy di Render):
-
-| Variable | Wajib | Default | Keterangan |
-| :--- | :---: | :--- | :--- |
-| `TIDAL_REFRESH_TOKEN` | ✅ | - | Refresh token OAuth2 untuk auto-refresh |
-| `TIDAL_CLIENT_ID` | ❌ | `6BDSRdpK9hqEBTgU` | Client ID OAuth2 |
-| `TIDAL_COUNTRY_CODE` | ❌ | `SG` | Kode negara katalog (misal `SG`, `ID`, `US`) |
-| `PUBLIC_URL` | ✅ | `http://localhost:8080` | Domain publik server (untuk URL manifest DASH) |
-| `ALLOW_DASH_HIRES` | ❌ | `true` | Aktifkan streaming Hi-Res 24-bit via DASH |
-| `AUTH_MODE` | ❌ | `off` | Mode verifikasi BitChord (`off` / `log` / `enforce`) |
-| `BITCHORD_AUTH_ISSUER` | ❌ | `https://bitchord-auth.kushagrasingh.in` | Issuer JWKS untuk autentikasi BitChord |
-| `PORT` | ❌ | `8080` | Port server Express |
-
-### 3. Jalankan Server
-```bash
-node server.js
-```
-
----
-
-## 📡 API Endpoints
-
-| Endpoint | Deskripsi |
-| :--- | :--- |
-| `GET /` | Halaman dashboard status *Liquid Glass* |
-| `GET /manifest.json` | Manifest addon dan konfigurasi dropdown kualitas untuk BitChord |
-| `GET /ping` | Cek status server, *uptime*, dan jumlah pengguna aktif |
-| `GET /search?q=...` | Pencarian track berdasarkan kata kunci |
-| `GET /isrc/:code` | Pencarian track berdasarkan kode ISRC |
-| `GET /stream/:id?quality=...` | Mengambil URL stream audio (`hires`, `lossless`, `atmos`, `high`, `low`) |
