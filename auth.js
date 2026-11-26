@@ -181,6 +181,8 @@ export function registerAuthRoutes(app) {
         const existing = issuedTrials.get(uid);
         addonToken = existing.token;
         exp = existing.exp;
+      } else if (issuedTrials.size >= 3) {
+        return res.redirect("/?auth_error=slots_full");
       } else {
         exp = Date.now() + TRIAL_HOURS * 3600 * 1000;
         addonToken = signPayload({ uid, u: username, vip: false, exp });
