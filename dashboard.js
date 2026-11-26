@@ -666,7 +666,7 @@ export function renderDashboard(req, res) {
         pill.classList.remove("offline");
         statusText.textContent = "Server Online · " + latency + " ms";
         metricUptime.textContent = formatUptime(data.uptime || 0);
-        metricUsers.textContent = (data.activeUsers || 0) + " active / " + (data.uniqueUsers || 0);
+        metricUsers.textContent = (data.activeUsers || 0) + " active";
       } catch (err) {
         pill.classList.add("offline");
         statusText.textContent = "Server Offline";
