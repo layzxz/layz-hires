@@ -1,4 +1,4 @@
-# Layz Hi-Res — BitChord Addon
+# Layz Hi-Res
 
 A custom audio streaming addon for **BitChord** with automatic Hi-Res 24-bit FLAC, 16-bit Lossless, and Dolby Atmos support, featuring a dark-glass web dashboard and Discord OAuth2 access control.
 
