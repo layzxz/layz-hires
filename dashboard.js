@@ -69,6 +69,14 @@ export function renderDashboard(req, res) {
     }`;
   }
 
+  const adminUsersSectionHtml = isVip
+    ? `
+    <div class="section-label">Connected Users · VIP View</div>
+    <div class="admin-users-box" id="adminUsersList">
+      <div class="admin-empty">Loading users...</div>
+    </div>`
+    : "";
+
   res.setHeader("Content-Type", "text/html; charset=utf-8");
   res.send(`<!DOCTYPE html>
 <html lang="en">
@@ -343,6 +351,55 @@ export function renderDashboard(req, res) {
     .btn-copy:hover { transform: translateY(-1px); }
     .btn-copy.copied { background: linear-gradient(180deg, #22c55e, #16a34a); }
 
+    .admin-users-box {
+      background: linear-gradient(155deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.02));
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2);
+      border-radius: 16px;
+      padding: 10px 14px;
+      margin-bottom: 22px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .admin-user-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      font-size: 12.5px;
+      padding: 4px 0;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+    }
+    .admin-user-row:last-child { border-bottom: none; }
+    .admin-user-left {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+    }
+    .status-dot {
+      width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0;
+      background: rgba(148, 163, 184, 0.5);
+    }
+    .status-dot.active {
+      background: var(--green);
+      box-shadow: 0 0 8px var(--green);
+    }
+    .admin-user-name {
+      font-weight: 600; color: #f8fafc;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .admin-user-right {
+      display: flex; align-items: center; gap: 8px; flex-shrink: 0;
+    }
+    .admin-lastseen {
+      font-family: var(--font-mono); font-size: 11px; color: var(--muted);
+    }
+    .admin-empty {
+      font-size: 12px; color: var(--muted); text-align: center; padding: 6px 0;
+    }
+
     .howto-box {
       background: linear-gradient(155deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.02));
       border: 1px solid rgba(255, 255, 255, 0.13);
@@ -444,6 +501,7 @@ export function renderDashboard(req, res) {
     </div>
 
     ${accessSectionHtml}
+    ${adminUsersSectionHtml}
 
     <div class="section-label">How to Add</div>
     <div class="howto-box">
@@ -490,6 +548,22 @@ export function renderDashboard(req, res) {
       return s + "s";
     }
 
+    function formatAgo(ms) {
+      var sec = Math.max(0, Math.floor((Date.now() - ms) / 1000));
+      if (sec < 60) return sec + "s ago";
+      var min = Math.floor(sec / 60);
+      if (min < 60) return min + "m ago";
+      return Math.floor(min / 60) + "h ago";
+    }
+
+    function escapeText(str) {
+      return String(str)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+    }
+
     function updateTrialCountdown() {
       var el = document.getElementById("trialCountdown");
       if (!el) return;
@@ -507,6 +581,36 @@ export function renderDashboard(req, res) {
     }
     updateTrialCountdown();
     setInterval(updateTrialCountdown, 1000);
+
+    async function loadAdminUsers() {
+      var box = document.getElementById("adminUsersList");
+      if (!box) return;
+      try {
+        var resp = await fetch("/admin/users", { cache: "no-store" });
+        if (!resp.ok) return;
+        var data = await resp.json();
+        if (!data.users || data.users.length === 0) {
+          box.innerHTML = '<div class="admin-empty">No active users yet</div>';
+          return;
+        }
+        box.innerHTML = data.users.map(function(u) {
+          var pillClass = u.role === "VIP" ? "vip" : "trial";
+          var dotClass = u.isActive ? "status-dot active" : "status-dot";
+          return (
+            '<div class="admin-user-row">' +
+              '<div class="admin-user-left">' +
+                '<span class="' + dotClass + '"></span>' +
+                '<span class="admin-user-name">' + escapeText(u.username) + '</span>' +
+              '</div>' +
+              '<div class="admin-user-right">' +
+                '<span class="tier-pill ' + pillClass + '">' + u.role + '</span>' +
+                '<span class="admin-lastseen">' + formatAgo(u.lastSeen) + '</span>' +
+              '</div>' +
+            '</div>'
+          );
+        }).join("");
+      } catch (err) {}
+    }
 
     async function checkPing() {
       var pill = document.getElementById("statusPill");
@@ -532,7 +636,11 @@ export function renderDashboard(req, res) {
     }
 
     checkPing();
-    setInterval(checkPing, 5000);
+    loadAdminUsers();
+    setInterval(function() {
+      checkPing();
+      loadAdminUsers();
+    }, 5000);
 
     function copyManifest() {
       var text = document.getElementById("manifestUrl").innerText;

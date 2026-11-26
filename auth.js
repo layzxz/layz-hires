@@ -13,10 +13,12 @@ import {
   jwks,
   signPayload,
   verifySignedPayload,
+  parseCookies,
 } from "./config.js";
 
 export const issuedTrials = new Map();
 export const activeClients = new Map();
+export const activeClientInfo = new Map();
 const oauthStates = new Map();
 
 export async function verifyBitChordAuth(req, res, next) {
@@ -87,7 +89,17 @@ export function trackAddonUser(req, res, next) {
         .digest("hex")
         .slice(0, 12);
 
-  activeClients.set(key, Date.now());
+  const now = Date.now();
+  activeClients.set(key, now);
+  activeClientInfo.set(key, {
+    uid: req.addonUser?.uid || null,
+    username: req.addonUser?.u || `Guest (${key.slice(0, 6)})`,
+    vip: Boolean(
+      req.addonUser?.vip || VIP_DISCORD_IDS.has(String(req.addonUser?.uid)),
+    ),
+    lastSeen: now,
+  });
+
   next();
 }
 
@@ -209,6 +221,33 @@ export function registerAuthRoutes(app) {
       console.error("[discord-oauth]", err.message);
       return res.redirect("/?auth_error=server_error");
     }
+  });
+
+  app.get("/admin/users", (req, res) => {
+    const cookies = parseCookies(req);
+    const session = cookies.lz_session
+      ? verifySignedPayload(cookies.lz_session)
+      : null;
+
+    if (
+      !session ||
+      (!session.vip && !VIP_DISCORD_IDS.has(String(session.uid)))
+    ) {
+      return res.status(403).json({ error: "VIP only" });
+    }
+
+    const now = Date.now();
+    const users = Array.from(activeClientInfo.values())
+      .sort((a, b) => b.lastSeen - a.lastSeen)
+      .map((u) => ({
+        username: u.username,
+        uid: u.uid,
+        role: u.vip ? "VIP" : "Trial",
+        lastSeen: u.lastSeen,
+        isActive: now - u.lastSeen < 5 * 60 * 1000,
+      }));
+
+    return res.json({ total: users.length, users });
   });
 
   app.get("/logout", (req, res) => {
