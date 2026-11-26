@@ -556,7 +556,6 @@ app.get("/", (req, res) => {
       justify-content: center;
       padding: 24px;
       position: relative;
-      overflow-x: hidden;
     }
 
     .liquid-bg {
@@ -614,7 +613,7 @@ app.get("/", (req, res) => {
         inset 0 1.5px 1px var(--glass-highlight),
         inset 0 -1px 2px rgba(0, 0, 0, 0.35),
         inset 1px 0 1px rgba(255, 255, 255, 0.16);
-      overflow: hidden;
+      overflow-x: clip;
     }
 
     .card::before {
@@ -732,7 +731,9 @@ app.get("/", (req, res) => {
       box-shadow: 0 10px 24px rgba(88, 101, 242, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.45);
       color: #fff; text-decoration: none; font-size: 14.5px; font-weight: 600;
       margin-bottom: 24px; transition: transform 0.15s ease, box-shadow 0.15s ease;
+      white-space: normal; text-align: center; line-height: 1.35;
     }
+    .btn-discord svg { flex-shrink: 0; }
     .btn-discord:hover {
       transform: translateY(-1px);
       box-shadow: 0 12px 28px rgba(88, 101, 242, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.6);
@@ -745,10 +746,10 @@ app.get("/", (req, res) => {
       box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25);
       border-radius: 18px; padding: 12px 14px; margin-bottom: 18px;
     }
-    .user-info { display: flex; align-items: center; gap: 12px; }
+    .user-info { display: flex; align-items: center; gap: 12px; min-width: 0; }
     .user-avatar {
       width: 38px; height: 38px; border-radius: 50%;
-      border: 1.5px solid rgba(255, 255, 255, 0.35);
+      border: 1.5px solid rgba(255, 255, 255, 0.35); flex-shrink: 0;
     }
     .user-name { font-size: 14px; font-weight: 600; color: #fff; margin-bottom: 3px; }
     .tier-pill {
@@ -762,6 +763,7 @@ app.get("/", (req, res) => {
       font-size: 12px; font-weight: 600; color: var(--muted); text-decoration: none;
       padding: 6px 12px; border-radius: 10px; background: rgba(255, 255, 255, 0.06);
       border: 1px solid rgba(255, 255, 255, 0.14); transition: background 0.15s ease, color 0.15s ease;
+      flex-shrink: 0;
     }
     .btn-logout:hover { background: rgba(248, 113, 113, 0.2); color: #fecaca; }
 
@@ -778,10 +780,11 @@ app.get("/", (req, res) => {
       border: 1px solid rgba(255, 255, 255, 0.16);
       box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.35), 0 1px 0 rgba(255, 255, 255, 0.12);
       border-radius: 18px; padding: 7px 7px 7px 16px; margin-bottom: 24px;
+      min-width: 0;
     }
     .url-text {
       font-family: var(--font-mono); font-size: 12.5px; color: #f1f5f9;
-      overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0;
     }
     .btn-copy {
       font-family: var(--font-sans);
@@ -803,8 +806,10 @@ app.get("/", (req, res) => {
       margin-bottom: 20px;
       font-size: 12.5px;
       color: #e2e8f0;
-      line-height: 1.6;
-      text-align: center;
+      line-height: 1.65;
+      text-align: left;
+      overflow-wrap: break-word;
+      word-break: normal;
     }
     .howto-sep {
       color: var(--accent);
@@ -812,7 +817,7 @@ app.get("/", (req, res) => {
       font-weight: 700;
     }
 
-    .badges { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 0px; }
+    .badges { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 0; }
     .badge {
       background: linear-gradient(155deg, rgba(255, 255, 255, 0.09), rgba(255, 255, 255, 0.02));
       border: 1px solid rgba(255, 255, 255, 0.14);
@@ -828,17 +833,23 @@ app.get("/", (req, res) => {
     .badge-title { font-size: 13.5px; font-weight: 600; color: #ffffff; margin-bottom: 3px; }
     .badge-sub { font-size: 11.5px; color: var(--muted); }
 
-    .footer {
-      display: flex; align-items: center; justify-content: space-between;
-      padding-top: 18px; border-top: 1px solid rgba(255, 255, 255, 0.12);
-      font-size: 12.5px; color: var(--muted);
-    }
-    .footer a { color: #7dd3fc; text-decoration: none; font-weight: 500; }
-    .footer a:hover { text-decoration: underline; }
-
     @media (max-width: 480px) {
-      .card { padding: 28px 28px; border-radius: 24px; }
-      .metrics, .badges { grid-template-columns: 1fr; }
+      body { padding: 14px; }
+      .card { padding: 20px 16px; border-radius: 22px; }
+      .top-bar { margin-bottom: 16px; }
+      .brand { gap: 12px; margin-bottom: 10px; }
+      .logo { width: 44px; height: 44px; border-radius: 14px; }
+      h1 { font-size: 24px; }
+      .subtitle { font-size: 13px; margin-bottom: 16px; }
+      .metrics { gap: 8px; margin-bottom: 16px; }
+      .metric { padding: 10px 12px; border-radius: 14px; }
+      .btn-discord { padding: 12px 14px; margin-bottom: 16px; font-size: 13.5px; }
+      .user-card { padding: 10px 12px; margin-bottom: 14px; }
+      .url-box { margin-bottom: 16px; }
+      .howto-box { padding: 10px 12px; margin-bottom: 16px; font-size: 11.5px; }
+      .badges { gap: 8px; }
+      .badge { padding: 10px 12px; border-radius: 14px; }
+      .badge-title { font-size: 12.5px; }
     }
   </style>
 </head>
@@ -890,7 +901,7 @@ app.get("/", (req, res) => {
 
     <div class="section-label">How to Add</div>
     <div class="howto-box">
-      Open BitChord<span class="howto-sep">›</span>Profiles<span class="howto-sep">›</span>Settings<span class="howto-sep">›</span>Sources<span class="howto-sep">›</span>Add an addon<span class="howto-sep">›</span>Paste URL
+      Open BitChord<span class="howto-sep">›</span><wbr>Profiles<span class="howto-sep">›</span><wbr>Settings<span class="howto-sep">›</span><wbr>Sources<span class="howto-sep">›</span><wbr>Add an addon<span class="howto-sep">›</span><wbr>Paste URL
     </div>
 
     <div class="section-label">Supported Audio Tiers</div>
