@@ -15,6 +15,24 @@ const PUBLIC_URL = or(
 const COUNTRY_CODE = or(process.env.TIDAL_COUNTRY_CODE, "SG");
 const ALLOW_DASH_HIRES = process.env.ALLOW_DASH_HIRES !== "false";
 
+// --- Discord OAuth2 & Trial Config ---
+const DISCORD_CLIENT_ID = or(process.env.DISCORD_CLIENT_ID, "").trim();
+const DISCORD_CLIENT_SECRET = or(process.env.DISCORD_CLIENT_SECRET, "").trim();
+const TOKEN_SECRET = or(
+  process.env.TOKEN_SECRET,
+  crypto.randomBytes(32).toString("hex"),
+).trim();
+const TRIAL_HOURS = Math.max(1, Number(or(process.env.TRIAL_HOURS, 24)) || 24);
+const VIP_DISCORD_IDS = new Set(
+  or(process.env.VIP_DISCORD_IDS, "")
+    .split(",")
+    .map((id) => id.trim())
+    .filter(Boolean),
+);
+const DISCORD_AUTH_ENABLED = Boolean(
+  DISCORD_CLIENT_ID && DISCORD_CLIENT_SECRET,
+);
+
 const AUTH_MODE = or(process.env.AUTH_MODE, "off").toLowerCase();
 const AUTH_ISSUER = or(
   process.env.BITCHORD_AUTH_ISSUER,
@@ -58,6 +76,84 @@ async function verifyBitChordAuth(req, res, next) {
     }
     return next();
   }
+}
+
+// --- HMAC Token & Cookie Helpers ---
+function signPayload(obj) {
+  const data = Buffer.from(JSON.stringify(obj)).toString("base64url");
+  const sig = crypto
+    .createHmac("sha256", TOKEN_SECRET)
+    .update(data)
+    .digest("base64url");
+  return `${data}.${sig}`;
+}
+
+function verifySignedPayload(token) {
+  if (!token || typeof token !== "string") return null;
+  const parts = token.split(".");
+  if (parts.length !== 2) return null;
+  const [data, sig] = parts;
+  const expectedSig = crypto
+    .createHmac("sha256", TOKEN_SECRET)
+    .update(data)
+    .digest("base64url");
+
+  const sigBuf = Buffer.from(sig);
+  const expBuf = Buffer.from(expectedSig);
+  if (sigBuf.length !== expBuf.length) return null;
+  if (!crypto.timingSafeEqual(sigBuf, expBuf)) return null;
+
+  try {
+    return JSON.parse(Buffer.from(data, "base64url").toString("utf-8"));
+  } catch {
+    return null;
+  }
+}
+
+function parseCookies(req) {
+  const header = req.headers.cookie || "";
+  const out = {};
+  for (const part of header.split(";")) {
+    const idx = part.indexOf("=");
+    if (idx === -1) continue;
+    const k = part.slice(0, idx).trim();
+    const v = part.slice(idx + 1).trim();
+    out[k] = decodeURIComponent(v);
+  }
+  return out;
+}
+
+function escapeHtml(str) {
+  return String(str || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+// In-memory store agar user non-VIP tidak bisa reset timer trial dengan login ulang
+const issuedTrials = new Map(); // discordId -> { token, exp }
+const oauthStates = new Map(); // state -> expiresAt
+
+function requireUserToken(req, res, next) {
+  const token = req.params.token;
+  const payload = verifySignedPayload(token);
+  if (!payload || !payload.uid) {
+    return res.status(401).json({
+      error: "Token tidak valid. Silakan login Discord di dashboard.",
+    });
+  }
+
+  const isVipNow = payload.vip || VIP_DISCORD_IDS.has(String(payload.uid));
+  if (!isVipNow && payload.exp && Date.now() > payload.exp) {
+    return res.status(403).json({
+      error: `Masa trial ${TRIAL_HOURS} jam sudah habis. Hubungi owner untuk akses permanen.`,
+    });
+  }
+
+  req.addonUser = payload;
+  return next();
 }
 
 const USER_AGENT =
@@ -210,26 +306,137 @@ function storeDashManifest(mpdXml) {
 }
 
 // --- Tracker Pengguna Unik (In-Memory) ---
-const activeClients = new Map(); // hashIP -> lastSeen timestamp
+const activeClients = new Map();
 
 function trackAddonUser(req, res, next) {
-  const rawIp =
-    req.headers["cf-connecting-ip"] ||
-    String(req.headers["x-forwarded-for"] || "").split(",")[0].trim() ||
-    req.socket?.remoteAddress ||
-    "unknown";
+  const key = req.addonUser?.uid
+    ? `dc:${req.addonUser.uid}`
+    : crypto
+        .createHash("sha256")
+        .update(
+          req.headers["cf-connecting-ip"] ||
+            String(req.headers["x-forwarded-for"] || "")
+              .split(",")[0]
+              .trim() ||
+            req.socket?.remoteAddress ||
+            "unknown",
+        )
+        .digest("hex")
+        .slice(0, 12);
 
-  const clientHash = crypto
-    .createHash("sha256")
-    .update(rawIp)
-    .digest("hex")
-    .slice(0, 12);
-
-  activeClients.set(clientHash, Date.now());
+  activeClients.set(key, Date.now());
   next();
 }
 
-app.use(["/manifest.json", "/search", "/isrc", "/stream"], trackAddonUser);
+// --- Discord OAuth2 Routes ---
+app.get("/auth/discord", (req, res) => {
+  if (!DISCORD_AUTH_ENABLED) {
+    return res.status(503).send("Discord OAuth belum dikonfigurasi di server.");
+  }
+
+  const state = crypto.randomBytes(16).toString("hex");
+  oauthStates.set(state, Date.now() + 300000);
+  for (const [k, exp] of oauthStates.entries()) {
+    if (exp < Date.now()) oauthStates.delete(k);
+  }
+
+  const redirectUri = `${PUBLIC_URL}/auth/discord/callback`;
+  const params = new URLSearchParams({
+    client_id: DISCORD_CLIENT_ID,
+    redirect_uri: redirectUri,
+    response_type: "code",
+    scope: "identify",
+    state,
+  });
+
+  res.redirect(`https://discord.com/api/oauth2/authorize?${params.toString()}`);
+});
+
+app.get("/auth/discord/callback", async (req, res) => {
+  try {
+    const { code, state } = req.query;
+    if (!code || !state || !oauthStates.has(String(state))) {
+      return res.redirect("/?auth_error=invalid_state");
+    }
+    oauthStates.delete(String(state));
+
+    const redirectUri = `${PUBLIC_URL}/auth/discord/callback`;
+    const tokenResp = await fetch("https://discord.com/api/oauth2/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        client_id: DISCORD_CLIENT_ID,
+        client_secret: DISCORD_CLIENT_SECRET,
+        grant_type: "authorization_code",
+        code: String(code),
+        redirect_uri: redirectUri,
+      }),
+    });
+
+    if (!tokenResp.ok) {
+      const txt = await tokenResp.text();
+      console.error("[discord-oauth] Token error:", txt);
+      return res.redirect("/?auth_error=token_failed");
+    }
+
+    const tokenData = await tokenResp.json();
+    const userResp = await fetch("https://discord.com/api/users/@me", {
+      headers: { Authorization: `Bearer ${tokenData.access_token}` },
+    });
+
+    if (!userResp.ok) {
+      return res.redirect("/?auth_error=user_failed");
+    }
+
+    const dcUser = await userResp.json();
+    const uid = String(dcUser.id);
+    const username = dcUser.global_name || dcUser.username || "User";
+    const avatarUrl = dcUser.avatar
+      ? `https://cdn.discordapp.com/avatars/${uid}/${dcUser.avatar}.png?size=64`
+      : `https://cdn.discordapp.com/embed/avatars/${Number(BigInt(uid) % 5n)}.png`;
+
+    const isVip = VIP_DISCORD_IDS.has(uid);
+    let addonToken;
+    let exp = 0;
+
+    if (isVip) {
+      addonToken = signPayload({ uid, vip: true, exp: 0 });
+    } else if (issuedTrials.has(uid)) {
+      const existing = issuedTrials.get(uid);
+      addonToken = existing.token;
+      exp = existing.exp;
+    } else {
+      exp = Date.now() + TRIAL_HOURS * 3600 * 1000;
+      addonToken = signPayload({ uid, vip: false, exp });
+      issuedTrials.set(uid, { token: addonToken, exp });
+    }
+
+    const sessionCookie = signPayload({
+      uid,
+      u: username,
+      av: avatarUrl,
+      vip: isVip,
+      t: addonToken,
+      exp,
+    });
+
+    const isHttps = PUBLIC_URL.startsWith("https://");
+    res.setHeader(
+      "Set-Cookie",
+      `lz_session=${encodeURIComponent(sessionCookie)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000${isHttps ? "; Secure" : ""}`,
+    );
+
+    return res.redirect("/");
+  } catch (err) {
+    console.error("[discord-oauth]", err.message);
+    return res.redirect("/?auth_error=server_error");
+  }
+});
+
+app.get("/logout", (req, res) => {
+  res.setHeader("Set-Cookie", "lz_session=; Path=/; HttpOnly; Max-Age=0");
+  res.redirect("/");
+});
 
 app.get("/ping", (req, res) => {
   const now = Date.now();
@@ -248,7 +455,66 @@ app.get("/ping", (req, res) => {
 });
 
 app.get("/", (req, res) => {
-  const manifestUrl = `${PUBLIC_URL}/manifest.json`;
+  const cookies = parseCookies(req);
+  const session = cookies.lz_session
+    ? verifySignedPayload(cookies.lz_session)
+    : null;
+
+  const isVip = session
+    ? session.vip || VIP_DISCORD_IDS.has(session.uid)
+    : false;
+  const isExpired =
+    session && !isVip && session.exp && Date.now() > session.exp;
+  const manifestUrl = session
+    ? `${PUBLIC_URL}/u/${session.t}/manifest.json`
+    : `${PUBLIC_URL}/manifest.json`;
+
+  let accessSectionHtml = "";
+  if (!DISCORD_AUTH_ENABLED) {
+    accessSectionHtml = `
+    <div class="section-label">Manifest URL</div>
+    <div class="url-box">
+      <span class="url-text" id="manifestUrl">${manifestUrl}</span>
+      <button class="btn-copy" id="copyBtn" onclick="copyManifest()">Copy URL</button>
+    </div>`;
+  } else if (!session) {
+    accessSectionHtml = `
+    <div class="section-label">Access Required · ${TRIAL_HOURS}h Trial</div>
+    <a href="/auth/discord" class="btn-discord">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+        <path d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028c.462-.63.874-1.295 1.226-1.994.021-.041.001-.09-.041-.106a13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.028zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z"/>
+      </svg>
+      <span>Login with Discord untuk Generate URL</span>
+    </a>`;
+  } else {
+    const badgeHtml = isVip
+      ? `<span class="tier-pill vip">VIP · Permanent</span>`
+      : isExpired
+        ? `<span class="tier-pill expired">Trial Expired</span>`
+        : `<span class="tier-pill trial" id="trialCountdown" data-exp="${session.exp}">Trial · Counting...</span>`;
+
+    accessSectionHtml = `
+    <div class="user-card">
+      <div class="user-info">
+        <img class="user-avatar" src="${escapeHtml(session.av)}" alt="Avatar" />
+        <div>
+          <div class="user-name">${escapeHtml(session.u)}</div>
+          ${badgeHtml}
+        </div>
+      </div>
+      <a href="/logout" class="btn-logout">Logout</a>
+    </div>
+    <div class="section-label">Personal Manifest URL</div>
+    ${
+      isExpired
+        ? `<div class="expired-box">Masa trial ${TRIAL_HOURS} jam kamu sudah berakhir. Hubungi owner untuk upgrade ke akses permanen.</div>`
+        : `<div class="url-box">
+      <span class="url-text" id="manifestUrl">${manifestUrl}</span>
+      <button class="btn-copy" id="copyBtn" onclick="copyManifest()">Copy URL</button>
+    </div>`
+    }`;
+  }
+
   res.setHeader("Content-Type", "text/html; charset=utf-8");
   res.send(`<!DOCTYPE html>
 <html lang="id">
@@ -289,7 +555,6 @@ app.get("/", (req, res) => {
       overflow-x: hidden;
     }
 
-    /* Animated Liquid Orbs */
     .liquid-bg {
       position: fixed;
       inset: 0;
@@ -306,30 +571,18 @@ app.get("/", (req, res) => {
       animation: floatOrb 18s ease-in-out infinite alternate;
     }
     .orb-1 {
-      width: 440px;
-      height: 440px;
-      top: -110px;
-      left: -90px;
+      width: 440px; height: 440px; top: -110px; left: -90px;
       background: radial-gradient(circle, #0ea5e9 0%, #2563eb 55%, transparent 75%);
     }
     .orb-2 {
-      width: 480px;
-      height: 480px;
-      bottom: -140px;
-      right: -100px;
+      width: 480px; height: 480px; bottom: -140px; right: -100px;
       background: radial-gradient(circle, #a855f7 0%, #6366f1 55%, transparent 75%);
-      animation-duration: 22s;
-      animation-delay: -5s;
+      animation-duration: 22s; animation-delay: -5s;
     }
     .orb-3 {
-      width: 340px;
-      height: 340px;
-      top: 42%;
-      left: 55%;
+      width: 340px; height: 340px; top: 42%; left: 55%;
       background: radial-gradient(circle, #2dd4bf 0%, #0284c7 55%, transparent 75%);
-      opacity: 0.35;
-      animation-duration: 26s;
-      animation-delay: -10s;
+      opacity: 0.35; animation-duration: 26s; animation-delay: -10s;
     }
     @keyframes floatOrb {
       0% { transform: translate(0, 0) scale(1); }
@@ -337,7 +590,6 @@ app.get("/", (req, res) => {
       100% { transform: translate(-35px, 40px) scale(0.95); }
     }
 
-    /* Main Liquid Glass Card */
     .card {
       position: relative;
       width: 100%;
@@ -361,7 +613,6 @@ app.get("/", (req, res) => {
       overflow: hidden;
     }
 
-    /* Interactive Cursor Sheen */
     .card::before {
       content: "";
       position: absolute;
@@ -373,9 +624,7 @@ app.get("/", (req, res) => {
         transparent 60%
       );
       pointer-events: none;
-      transition: opacity 0.3s ease;
     }
-
     .card > * { position: relative; z-index: 1; }
 
     .top-bar {
@@ -392,7 +641,6 @@ app.get("/", (req, res) => {
       gap: 8px;
       font-size: 12px;
       font-weight: 600;
-      letter-spacing: -0.01em;
       color: #bbf7d0;
       background: linear-gradient(180deg, rgba(34, 197, 94, 0.22), rgba(34, 197, 94, 0.08));
       border: 1px solid rgba(134, 239, 172, 0.35);
@@ -400,7 +648,6 @@ app.get("/", (req, res) => {
       padding: 6px 14px;
       border-radius: 999px;
       backdrop-filter: blur(12px);
-      transition: all 0.2s ease;
     }
     .status.offline {
       color: #fecaca;
@@ -408,18 +655,11 @@ app.get("/", (req, res) => {
       border-color: rgba(252, 165, 165, 0.35);
     }
     .dot {
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      background: var(--green);
-      box-shadow: 0 0 12px var(--green);
+      width: 8px; height: 8px; border-radius: 50%;
+      background: var(--green); box-shadow: 0 0 12px var(--green);
       animation: pulse 2s infinite;
     }
-    .status.offline .dot {
-      background: var(--red);
-      box-shadow: 0 0 12px var(--red);
-      animation: none;
-    }
+    .status.offline .dot { background: var(--red); box-shadow: 0 0 12px var(--red); animation: none; }
     @keyframes pulse {
       0%, 100% { opacity: 1; transform: scale(1); }
       50% { opacity: 0.45; transform: scale(0.85); }
@@ -436,154 +676,126 @@ app.get("/", (req, res) => {
       box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28);
     }
 
-    .brand {
-      display: flex;
-      align-items: center;
-      gap: 16px;
-      margin-bottom: 14px;
-    }
+    .brand { display: flex; align-items: center; gap: 16px; margin-bottom: 14px; }
     .logo {
-      width: 54px;
-      height: 54px;
-      border-radius: 18px;
+      width: 54px; height: 54px; border-radius: 18px;
       background: linear-gradient(135deg, rgba(56, 189, 248, 0.85), rgba(129, 140, 248, 0.85));
       border: 1px solid rgba(255, 255, 255, 0.4);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      box-shadow:
-        0 12px 28px rgba(56, 189, 248, 0.35),
-        inset 0 1.5px 1px rgba(255, 255, 255, 0.65);
+      display: flex; align-items: center; justify-content: center;
+      box-shadow: 0 12px 28px rgba(56, 189, 248, 0.35), inset 0 1.5px 1px rgba(255, 255, 255, 0.65);
       flex-shrink: 0;
     }
     h1 {
-      font-size: 30px;
-      font-weight: 700;
-      letter-spacing: -0.025em;
+      font-size: 30px; font-weight: 700; letter-spacing: -0.025em;
       background: linear-gradient(180deg, #ffffff 10%, #bae6fd 100%);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
     }
     .subtitle {
-      font-size: 14.5px;
-      color: var(--muted);
-      line-height: 1.55;
-      letter-spacing: -0.01em;
-      margin-bottom: 24px;
+      font-size: 14.5px; color: var(--muted); line-height: 1.55;
+      letter-spacing: -0.01em; margin-bottom: 24px;
     }
     .subtitle strong { color: #ffffff; font-weight: 600; }
 
-    /* Glass Metrics */
-    .metrics {
-      display: grid;
-      grid-template-columns: repeat(2, 1fr);
-      gap: 12px;
-      margin-bottom: 24px;
-    }
+    .metrics { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-bottom: 24px; }
     .metric {
       background: linear-gradient(160deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.03));
       border: 1px solid rgba(255, 255, 255, 0.15);
       box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28);
-      border-radius: 18px;
-      padding: 13px 15px;
+      border-radius: 18px; padding: 13px 15px;
       transition: transform 0.2s ease, border-color 0.2s ease;
     }
-    .metric:hover {
-      transform: translateY(-2px);
-      border-color: rgba(255, 255, 255, 0.3);
-    }
+    .metric:hover { transform: translateY(-2px); border-color: rgba(255, 255, 255, 0.3); }
     .metric-label {
-      font-size: 10.5px;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.06em;
-      color: var(--muted);
-      margin-bottom: 6px;
+      font-size: 10.5px; font-weight: 600; text-transform: uppercase;
+      letter-spacing: 0.06em; color: var(--muted); margin-bottom: 6px;
     }
-    .metric-value {
-      font-family: var(--font-mono);
-      font-size: 15px;
-      font-weight: 600;
-      color: var(--text);
-    }
+    .metric-value { font-family: var(--font-mono); font-size: 15px; font-weight: 600; color: var(--text); }
     .metric-value.fast { color: var(--green); }
     .metric-value.medium { color: var(--yellow); }
     .metric-value.slow { color: var(--red); }
 
     .section-label {
-      font-size: 11px;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.07em;
-      color: var(--muted);
-      margin-bottom: 10px;
+      font-size: 11px; font-weight: 600; text-transform: uppercase;
+      letter-spacing: 0.07em; color: var(--muted); margin-bottom: 10px;
     }
 
-    /* Recessed Glass URL Capsule */
+    /* Discord Login & User Profile */
+    .btn-discord {
+      display: flex; align-items: center; justify-content: center; gap: 10px;
+      width: 100%; padding: 14px 20px; border-radius: 18px;
+      background: linear-gradient(180deg, rgba(88, 101, 242, 0.95), rgba(71, 82, 196, 0.95));
+      border: 1px solid rgba(255, 255, 255, 0.32);
+      box-shadow: 0 10px 24px rgba(88, 101, 242, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.45);
+      color: #fff; text-decoration: none; font-size: 14.5px; font-weight: 600;
+      margin-bottom: 24px; transition: transform 0.15s ease, box-shadow 0.15s ease;
+    }
+    .btn-discord:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 12px 28px rgba(88, 101, 242, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.6);
+    }
+
+    .user-card {
+      display: flex; align-items: center; justify-content: space-between; gap: 12px;
+      background: rgba(255, 255, 255, 0.07);
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25);
+      border-radius: 18px; padding: 12px 14px; margin-bottom: 18px;
+    }
+    .user-info { display: flex; align-items: center; gap: 12px; }
+    .user-avatar {
+      width: 38px; height: 38px; border-radius: 50%;
+      border: 1.5px solid rgba(255, 255, 255, 0.35);
+    }
+    .user-name { font-size: 14px; font-weight: 600; color: #fff; margin-bottom: 3px; }
+    .tier-pill {
+      display: inline-block; font-size: 11px; font-weight: 600;
+      padding: 2px 9px; border-radius: 999px; font-family: var(--font-mono);
+    }
+    .tier-pill.vip { background: rgba(56, 189, 248, 0.2); color: #7dd3fc; border: 1px solid rgba(125, 211, 252, 0.35); }
+    .tier-pill.trial { background: rgba(250, 204, 21, 0.18); color: #fde047; border: 1px solid rgba(253, 224, 71, 0.35); }
+    .tier-pill.expired { background: rgba(248, 113, 113, 0.2); color: #fca5a5; border: 1px solid rgba(252, 165, 165, 0.35); }
+    .btn-logout {
+      font-size: 12px; font-weight: 600; color: var(--muted); text-decoration: none;
+      padding: 6px 12px; border-radius: 10px; background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.14); transition: background 0.15s ease, color 0.15s ease;
+    }
+    .btn-logout:hover { background: rgba(248, 113, 113, 0.2); color: #fecaca; }
+
+    .expired-box {
+      background: rgba(239, 68, 68, 0.14);
+      border: 1px solid rgba(248, 113, 113, 0.35);
+      border-radius: 16px; padding: 14px 16px; margin-bottom: 24px;
+      font-size: 13px; color: #fecaca; line-height: 1.5;
+    }
+
     .url-box {
-      display: flex;
-      align-items: center;
-      gap: 8px;
+      display: flex; align-items: center; gap: 8px;
       background: rgba(3, 6, 18, 0.42);
       border: 1px solid rgba(255, 255, 255, 0.16);
-      box-shadow:
-        inset 0 2px 6px rgba(0, 0, 0, 0.35),
-        0 1px 0 rgba(255, 255, 255, 0.12);
-      border-radius: 18px;
-      padding: 7px 7px 7px 16px;
-      margin-bottom: 24px;
+      box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.35), 0 1px 0 rgba(255, 255, 255, 0.12);
+      border-radius: 18px; padding: 7px 7px 7px 16px; margin-bottom: 24px;
     }
     .url-text {
-      font-family: var(--font-mono);
-      font-size: 12.5px;
-      color: #f1f5f9;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-      flex: 1;
+      font-family: var(--font-mono); font-size: 12.5px; color: #f1f5f9;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1;
     }
     .btn-copy {
       font-family: var(--font-sans);
       background: linear-gradient(180deg, rgba(56, 189, 248, 0.95), rgba(99, 102, 241, 0.95));
-      color: #fff;
-      border: 1px solid rgba(255, 255, 255, 0.35);
-      box-shadow:
-        0 6px 18px rgba(56, 189, 248, 0.3),
-        inset 0 1px 0 rgba(255, 255, 255, 0.55);
-      border-radius: 12px;
-      padding: 9px 17px;
-      font-size: 13px;
-      font-weight: 600;
-      letter-spacing: -0.01em;
-      cursor: pointer;
-      transition: transform 0.15s ease, box-shadow 0.15s ease;
-      flex-shrink: 0;
+      color: #fff; border: 1px solid rgba(255, 255, 255, 0.35);
+      box-shadow: 0 6px 18px rgba(56, 189, 248, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.55);
+      border-radius: 12px; padding: 9px 17px; font-size: 13px; font-weight: 600;
+      cursor: pointer; transition: transform 0.15s ease, box-shadow 0.15s ease; flex-shrink: 0;
     }
-    .btn-copy:hover {
-      transform: translateY(-1px);
-      box-shadow:
-        0 8px 22px rgba(56, 189, 248, 0.45),
-        inset 0 1px 0 rgba(255, 255, 255, 0.7);
-    }
-    .btn-copy:active { transform: translateY(0); }
-    .btn-copy.copied {
-      background: linear-gradient(180deg, #22c55e, #16a34a);
-      box-shadow: 0 6px 18px rgba(34, 197, 94, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.5);
-    }
+    .btn-copy:hover { transform: translateY(-1px); }
+    .btn-copy.copied { background: linear-gradient(180deg, #22c55e, #16a34a); }
 
-    /* Glass Audio Tier Tiles */
-    .badges {
-      display: grid;
-      grid-template-columns: repeat(2, 1fr);
-      gap: 10px;
-      margin-bottom: 26px;
-    }
+    .badges { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 26px; }
     .badge {
       background: linear-gradient(155deg, rgba(255, 255, 255, 0.09), rgba(255, 255, 255, 0.02));
       border: 1px solid rgba(255, 255, 255, 0.14);
       box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.24);
-      border-radius: 16px;
-      padding: 13px 15px;
+      border-radius: 16px; padding: 13px 15px;
       transition: transform 0.2s ease, background 0.2s ease, border-color 0.2s ease;
     }
     .badge:hover {
@@ -591,32 +803,15 @@ app.get("/", (req, res) => {
       background: linear-gradient(155deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0.04));
       border-color: rgba(255, 255, 255, 0.28);
     }
-    .badge-title {
-      font-size: 13.5px;
-      font-weight: 600;
-      letter-spacing: -0.01em;
-      color: #ffffff;
-      margin-bottom: 3px;
-    }
-    .badge-sub {
-      font-size: 11.5px;
-      color: var(--muted);
-    }
+    .badge-title { font-size: 13.5px; font-weight: 600; color: #ffffff; margin-bottom: 3px; }
+    .badge-sub { font-size: 11.5px; color: var(--muted); }
 
     .footer {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding-top: 18px;
-      border-top: 1px solid rgba(255, 255, 255, 0.12);
-      font-size: 12.5px;
-      color: var(--muted);
+      display: flex; align-items: center; justify-content: space-between;
+      padding-top: 18px; border-top: 1px solid rgba(255, 255, 255, 0.12);
+      font-size: 12.5px; color: var(--muted);
     }
-    .footer a {
-      color: #7dd3fc;
-      text-decoration: none;
-      font-weight: 500;
-    }
+    .footer a { color: #7dd3fc; text-decoration: none; font-weight: 500; }
     .footer a:hover { text-decoration: underline; }
 
     @media (max-width: 480px) {
@@ -638,7 +833,7 @@ app.get("/", (req, res) => {
         <span class="dot"></span>
         <span id="statusText">Checking...</span>
       </div>
-      <span class="pill-mono">v1.0.2</span>
+      <span class="pill-mono">v1.1.0</span>
     </div>
 
     <div class="brand">
@@ -677,11 +872,7 @@ app.get("/", (req, res) => {
       </div>
     </div>
 
-    <div class="section-label">Manifest URL</div>
-    <div class="url-box">
-      <span class="url-text" id="manifestUrl">${manifestUrl}</span>
-      <button class="btn-copy" id="copyBtn" onclick="copyManifest()">Copy URL</button>
-    </div>
+    ${accessSectionHtml}
 
     <div class="section-label">Supported Audio Tiers</div>
     <div class="badges">
@@ -705,7 +896,7 @@ app.get("/", (req, res) => {
 
     <div class="footer">
       <span>Paste URL di menu Sources BitChord</span>
-      <a href="/manifest.json" target="_blank">Lihat manifest.json &rarr;</a>
+      <span>Protected Access</span>
     </div>
   </main>
 
@@ -727,6 +918,24 @@ app.get("/", (req, res) => {
       if (m > 0) return m + "m " + s + "s";
       return s + "s";
     }
+
+    function updateTrialCountdown() {
+      var el = document.getElementById("trialCountdown");
+      if (!el) return;
+      var exp = Number(el.getAttribute("data-exp"));
+      var diff = Math.max(0, Math.floor((exp - Date.now()) / 1000));
+      if (diff <= 0) {
+        el.textContent = "Trial Expired";
+        el.className = "tier-pill expired";
+        return;
+      }
+      var h = Math.floor(diff / 3600);
+      var m = Math.floor((diff % 3600) / 60);
+      var s = diff % 60;
+      el.textContent = "Trial · " + h + "h " + m + "m " + s + "s";
+    }
+    updateTrialCountdown();
+    setInterval(updateTrialCountdown, 1000);
 
     async function checkPing() {
       var pill = document.getElementById("statusPill");
@@ -784,11 +993,12 @@ app.get("/", (req, res) => {
 </html>`);
 });
 
-app.get("/manifest.json", (req, res) => {
+// --- Addon Core Handlers ---
+function handleManifest(req, res) {
   res.json({
     id: "id.web.layyyz.lzaddon",
     name: "Layz Hi-Res",
-    version: "1.0.2",
+    version: "1.1.0",
     description: "Hi-Res & Lossless addon for BitChord",
     resources: ["search", "stream", "isrc"],
     bitchordAuth: AUTH_MODE === "enforce",
@@ -797,33 +1007,18 @@ app.get("/manifest.json", (req, res) => {
         key: "quality",
         type: "select",
         options: [
-          {
-            label: "Hi-Res Lossless (24-bit)",
-            value: "hires",
-          },
-          {
-            label: "Lossless (16-bit)",
-            value: "lossless",
-          },
-          {
-            label: "Dolby Atmos",
-            value: "atmos",
-          },
-          {
-            label: "High · 320 kbps",
-            value: "high",
-          },
-          {
-            label: "Low · 128 kbps",
-            value: "low",
-          },
+          { label: "Hi-Res Lossless (24-bit)", value: "hires" },
+          { label: "Lossless (16-bit)", value: "lossless" },
+          { label: "Dolby Atmos", value: "atmos" },
+          { label: "High · 320 kbps", value: "high" },
+          { label: "Low · 128 kbps", value: "low" },
         ],
       },
     ],
   });
-});
+}
 
-app.get("/search", verifyBitChordAuth, async (req, res) => {
+async function handleSearch(req, res) {
   try {
     const query = String(or(req.query.q, "")).trim();
     const limit = Math.min(Number(or(req.query.limit, 15)), 50);
@@ -835,9 +1030,9 @@ app.get("/search", verifyBitChordAuth, async (req, res) => {
     console.error("[/search]", err.message);
     res.status(500).json({ tracks: [], error: err.message });
   }
-});
+}
 
-app.get("/isrc/:code", verifyBitChordAuth, async (req, res) => {
+async function handleIsrc(req, res) {
   try {
     const isrc = String(or(req.params.code, "")).trim().toUpperCase();
     if (!isrc) return res.json({ tracks: [] });
@@ -852,15 +1047,14 @@ app.get("/isrc/:code", verifyBitChordAuth, async (req, res) => {
     console.error("[/isrc]", err.message);
     res.status(500).json({ tracks: [], error: err.message });
   }
-});
+}
 
-app.get("/stream/:id", verifyBitChordAuth, async (req, res) => {
+async function handleStream(req, res) {
   try {
     let trackId = req.params.id;
     const requestedQuality = mapBitChordQualityToTidal(req.query.quality);
     let audioQuality = requestedQuality;
 
-    // Jika pilih Dolby Atmos, cek apakah track ini Atmos; jika bukan, cari versi Atmos-nya
     if (requestedQuality === "DOLBY_ATMOS") {
       try {
         const trackInfo = await tidalFetch(`/tracks/${trackId}`);
@@ -992,17 +1186,81 @@ app.get("/stream/:id", verifyBitChordAuth, async (req, res) => {
     console.error("[/stream]", err.message);
     res.status(500).json({ error: err.message });
   }
-});
+}
+
+// --- Protected Per-User Routes (/u/:token/...) ---
+app.get(
+  "/u/:token/manifest.json",
+  requireUserToken,
+  trackAddonUser,
+  handleManifest,
+);
+app.get(
+  "/u/:token/search",
+  requireUserToken,
+  verifyBitChordAuth,
+  trackAddonUser,
+  handleSearch,
+);
+app.get(
+  "/u/:token/isrc/:code",
+  requireUserToken,
+  verifyBitChordAuth,
+  trackAddonUser,
+  handleIsrc,
+);
+app.get(
+  "/u/:token/stream/:id",
+  requireUserToken,
+  verifyBitChordAuth,
+  trackAddonUser,
+  handleStream,
+);
+
+// --- Root Routes (Diblokir otomatis jika Discord Auth aktif) ---
+function blockIfAuthEnabled(req, res, next) {
+  if (DISCORD_AUTH_ENABLED) {
+    return res.status(401).json({
+      error: `Akses membutuhkan login Discord. Buka ${PUBLIC_URL} untuk mendapatkan URL manifest unik.`,
+    });
+  }
+  return next();
+}
+
+app.get("/manifest.json", blockIfAuthEnabled, trackAddonUser, handleManifest);
+app.get(
+  "/search",
+  blockIfAuthEnabled,
+  verifyBitChordAuth,
+  trackAddonUser,
+  handleSearch,
+);
+app.get(
+  "/isrc/:code",
+  blockIfAuthEnabled,
+  verifyBitChordAuth,
+  trackAddonUser,
+  handleIsrc,
+);
+app.get(
+  "/stream/:id",
+  blockIfAuthEnabled,
+  verifyBitChordAuth,
+  trackAddonUser,
+  handleStream,
+);
 
 app.get("/dash/:token.mpd", (req, res) => {
   const entry = dashCache.get(req.params.token);
-  if (!entry) return res.status(404).send("Manifest expired");
-  if (entry.expiresAt < Date.now())
+  if (!entry || entry.expiresAt < Date.now()) {
     return res.status(404).send("Manifest expired");
+  }
   res.setHeader("Content-Type", "application/dash+xml");
   res.send(entry.xml);
 });
 
 app.listen(PORT, () => {
-  console.log(`lz addon aktif di port ${PORT} (${PUBLIC_URL})`);
+  console.log(
+    `lz addon aktif di port ${PORT} (${PUBLIC_URL}) | Discord Auth: ${DISCORD_AUTH_ENABLED ? "ON" : "OFF"} | Trial: ${TRIAL_HOURS}h`,
+  );
 });
