@@ -106,6 +106,7 @@ export function trackAddonUser(req, res, next) {
     vip: Boolean(
       req.addonUser?.vip || VIP_DISCORD_IDS.has(String(req.addonUser?.uid)),
     ),
+    exp: req.addonUser?.exp || 0,
     lastSeen: now,
   });
 
@@ -254,6 +255,7 @@ export function registerAuthRoutes(app) {
         username: u.username,
         uid: u.uid,
         role: u.vip ? "VIP" : "Trial",
+        exp: u.exp || 0,
         lastSeen: u.lastSeen,
         isActive: now - u.lastSeen < 5 * 60 * 1000,
       }));

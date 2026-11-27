@@ -668,6 +668,16 @@ export function renderDashboard(req, res) {
       return Math.floor(min / 60) + "h ago";
     }
 
+    function formatRemaining(exp) {
+      if (!exp) return "Trial";
+      var diff = Math.max(0, Math.floor((exp - Date.now()) / 1000));
+      if (diff <= 0) return "Expired";
+      var h = Math.floor(diff / 3600);
+      var m = Math.floor((diff % 3600) / 60);
+      if (h > 0) return "Trial · " + h + "h " + m + "m";
+      return "Trial · " + m + "m";
+    }
+
     function escapeText(str) {
       return String(str)
         .replace(/&/g, "&amp;")
@@ -724,7 +734,9 @@ export function renderDashboard(req, res) {
           return;
         }
         box.innerHTML = data.users.map(function(u) {
-          var pillClass = u.role === "VIP" ? "vip" : "trial";
+          var isExpired = u.role !== "VIP" && u.exp && Date.now() >= u.exp;
+          var pillClass = u.role === "VIP" ? "vip" : (isExpired ? "expired" : "trial");
+          var roleText = u.role === "VIP" ? "VIP" : formatRemaining(u.exp);
           var dotClass = u.isActive ? "status-dot active" : "status-dot";
           var revokeBtn = (u.role !== "VIP" && u.uid)
             ? '<button class="btn-revoke" data-uid="' + escapeText(u.uid) + '" data-name="' + escapeText(u.username) + '" onclick="revokeUser(this)">Revoke</button>'
@@ -736,7 +748,7 @@ export function renderDashboard(req, res) {
                 '<span class="admin-user-name">' + escapeText(u.username) + '</span>' +
               '</div>' +
               '<div class="admin-user-right">' +
-                '<span class="tier-pill ' + pillClass + '">' + u.role + '</span>' +
+                '<span class="tier-pill ' + pillClass + '">' + roleText + '</span>' +
                 '<span class="admin-lastseen">' + formatAgo(u.lastSeen) + '</span>' +
                 revokeBtn +
               '</div>' +
