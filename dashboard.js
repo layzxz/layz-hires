@@ -317,6 +317,33 @@ export function renderDashboard(req, res) {
       letter-spacing: 0.07em; color: var(--muted); margin-bottom: 10px;
     }
 
+    .section-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+    .section-row .section-label { margin-bottom: 0; }
+    .btn-download-mini {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 11px;
+      font-weight: 600;
+      color: #7dd3fc;
+      text-decoration: none;
+      background: rgba(56, 189, 248, 0.12);
+      border: 1px solid rgba(125, 211, 252, 0.28);
+      padding: 3px 10px;
+      border-radius: 999px;
+      transition: background 0.15s ease, color 0.15s ease;
+    }
+    .btn-download-mini:hover {
+      background: rgba(56, 189, 248, 0.25);
+      color: #ffffff;
+    }
+
     .alert-box, .expired-box {
       background: rgba(239, 68, 68, 0.14);
       border: 1px solid rgba(248, 113, 113, 0.35);
@@ -578,7 +605,17 @@ export function renderDashboard(req, res) {
     ${accessSectionHtml}
     ${adminUsersSectionHtml}
 
-    <div class="section-label">How to Add</div>
+    <div class="section-row">
+      <div class="section-label">How to Add</div>
+      <a href="https://github.com/kushagrasinghx/BitChord/releases" target="_blank" rel="noopener noreferrer" class="btn-download-mini">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+          <polyline points="7 10 12 15 17 10"></polyline>
+          <line x1="12" y1="15" x2="12" y2="3"></line>
+        </svg>
+        <span>Download BitChord</span>
+      </a>
+    </div>
     <div class="howto-box">
       Open BitChord<span class="howto-sep">›</span><wbr>Profiles<span class="howto-sep">›</span><wbr>Settings<span class="howto-sep">›</span><wbr>Sources<span class="howto-sep">›</span><wbr>Add an addon<span class="howto-sep">›</span><wbr>Paste URL
     </div>
